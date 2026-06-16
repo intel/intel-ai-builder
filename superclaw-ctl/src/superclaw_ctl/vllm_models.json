@@ -1,0 +1,35 @@
+{
+  "active_chat_model": "qwen3-coder-next",
+  "active_embedding_model": "kalm-embedding-v2.5",
+  "models": [
+    {
+      "id": "qwen3-coder-next",
+      "name": "Qwen3-Coder-Next",
+      "role": "chat",
+      "repo": "Qwen/Qwen3-Coder-Next",
+      "revision": "main",
+      "local_dir_name": "Qwen3-Coder-Next",
+      "vllm_args": {
+        "served_model_name": "Qwen3-Coder-Next",
+        "port": 18103,
+        "tensor_parallel_size": 4,
+        "quantization": "fp8",
+        "max_model_len": 262144,
+        "gpu_memory_util": 0.85
+      }
+    },
+    {
+      "id": "kalm-embedding-v2.5",
+      "name": "KaLM Embedding Multilingual Mini Instruct v2.5",
+      "role": "embedding",
+      "repo": "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
+      "revision": "main",
+      "local_dir_name": "KaLM-embedding-v2.5",
+      "vllm_args": {
+        "served_model_name": "KaLM-embedding-v2.5",
+        "port": 18104,
+        "gpu_memory_util": 0.15
+      }
+    }
+  ]
+}
