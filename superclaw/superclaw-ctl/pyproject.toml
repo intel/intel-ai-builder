@@ -1,6 +1,6 @@
 [project]
 name = "superclaw-ctl"
-version = "0.1.0"
+version = "1.0.0"
 description = "CLI tool for managing SuperClaw vLLM model serving"
 readme = "README.md"
 requires-python = ">=3.11"

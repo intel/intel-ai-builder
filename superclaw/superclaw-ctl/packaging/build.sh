@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # build.sh — Build the superclaw-ctl single-file Linux binary with PyInstaller.
 #
+# Run this on Linux
+#
 # Prerequisites on the build host:
 #   - Python 3.11+
 #   - uv  (https://docs.astral.sh/uv/)

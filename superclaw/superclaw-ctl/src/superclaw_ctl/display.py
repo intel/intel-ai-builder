@@ -113,6 +113,84 @@ def redact_token(token: str) -> str:
     """Show first 4 chars + '...' for display."""
     return "***" if len(token) <= 4 else token[:4] + "..."
 
+def print_init_plan(
+    models_dir: str,
+    models: list,
+    disk_check,
+    images: list[str],
+    image_size_bytes_approx: int,
+    config_dir: str,
+    *,
+    models_dir_will_be_created: bool = False,
+    model_statuses: dict[str, str] | None = None,
+    model_bytes: dict[str, int] | None = None,
+    image_present: bool = False,
+    skip_models: bool = False,
+) -> None:
+    """Print a pre-flight summary of what init will do, before asking for confirmation.
+
+    model_statuses maps model id -> "present" | "incomplete" | "missing" | "skipped".
+    model_bytes maps model id -> estimated bytes to actually download:
+      - For incomplete models this is the remaining bytes (snapshot_download is
+        incremental — it SHA-checks each file and only fetches what's missing).
+      - For missing models this is the full size_bytes_approx.
+    disk_check may be None when no downloads are needed at all.
+    """
+    lines: list[str] = []
+    dir_note = " [dim](will be created)[/dim]" if models_dir_will_be_created else ""
+
+    # Models section
+    lines.append("[bold]Models:[/bold]")
+    for model in models:
+        model_id = str(_read(model, "id", default=""))
+        name = str(_read(model, "name", default="—"))
+        role = str(_read(model, "role", default=""))
+        size = int(_read(model, "size_bytes_approx", default=0) or 0)
+        size_str = format_size(size) if size else "size unknown"
+        role_label = f" [{role}]" if role else ""
+        status = (model_statuses or {}).get(model_id, "missing")
+        bytes_to_dl = (model_bytes or {}).get(model_id, size)
+        bytes_str = format_size(bytes_to_dl) if bytes_to_dl else "size unknown"
+
+        if status == "present":
+            lines.append(f"  [green]✓[/green] {name}{role_label}  already present — will verify  →  {models_dir}")
+        elif status == "incomplete":
+            # snapshot_download is incremental: only missing/changed files are fetched
+            remaining_note = f"up to ~{bytes_str} remaining" if bytes_to_dl else "some files missing"
+            lines.append(f"  [yellow]⚠[/yellow] {name}{role_label}  incomplete — resuming sync ({remaining_note})  →  {models_dir}{dir_note}")
+        elif status == "skipped":
+            lines.append(f"  [dim]-[/dim] {name}{role_label}  skipped (--skip-models) — download/verify bypassed  →  {models_dir}{dir_note}")
+        else:
+            lines.append(f"  [cyan]↓[/cyan] {name}{role_label}  will download ~{size_str}  →  {models_dir}{dir_note}")
+
+    # Docker images section
+    lines.append("")
+    lines.append("[bold]Docker images:[/bold]")
+    for image in images:
+        if image_present:
+            lines.append(f"  [green]✓[/green] {image}  present locally — init will still run pull to check updates")
+        else:
+            lines.append(f"  [cyan]↓[/cyan] {image}  will pull ~{format_size(image_size_bytes_approx)}")
+
+    # Disk space section
+    lines.append("")
+    if disk_check is not None:
+        disk_status = str(_read(disk_check, "status", default="unknown")).lower()
+        disk_msg = str(_read(disk_check, "message", default=""))
+        disk_color = "green" if disk_status == "pass" else "yellow" if disk_status == "warn" else "red"
+        lines.append(f"[bold]Disk space:[/bold] [{disk_color}]{disk_msg}[/{disk_color}]")
+    else:
+        if skip_models:
+            lines.append("[bold]Disk space:[/bold] [yellow]Model download skipped; disk check not required for models[/yellow]")
+        else:
+            lines.append("[bold]Disk space:[/bold] [green]No download needed — all assets already present[/green]")
+
+    # Config section
+    lines.append("")
+    lines.append(f"[bold]Config & keys:[/bold] will be written to {config_dir}")
+
+    console.print(Panel.fit("\n".join(lines), title="Init Setup Plan", border_style="cyan"))
+
 def print_error(message: str, *, hint: str = "") -> None:
     """Print an error panel to stderr with optional hint."""
     lines = [message]

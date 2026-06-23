@@ -14,8 +14,8 @@ from superclaw_ctl.errors import ConfigError, SecretsError
 
 _CONFIG_FILE_NAME = "config.toml"
 _SECRETS_FILE_NAME = "secrets.toml"
-_REJECTED_TOKENS = frozenset({"", "1234qwer", "password", "secret", "admin", "test", "user"})
-# Escape hatch: set this env var truthy to allow known demo/weak tokens (e.g. `user`).
+_REJECTED_TOKENS = frozenset({"", "password", "secret", "admin", "test"})
+# Escape hatch: set this env var truthy to allow known demo/weak tokens
 # An empty key is always rejected regardless, since it cannot authenticate anything.
 _ALLOW_DEMO_KEY_ENV = "SUPERCLAW_ALLOW_DEMO_KEY"
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -42,11 +42,25 @@ class ComposeConfig(BaseModel):
     extra_files: list[str] = Field(default_factory=list)
 
 
+class VllmWatchdogConfig(BaseModel):
+    enabled: bool = True
+    interval_s: int = 60
+    consecutive_failures: int = 3
+    canary_expected: str = "Hello"
+    max_restart_attempts: int = 5   # 0 = unlimited
+    restart_window_minutes: int = 60  # reset counter after this many minutes of healthy operation
+
+
+class VllmConfig(BaseModel):
+    watchdog: VllmWatchdogConfig = Field(default_factory=VllmWatchdogConfig)
+
+
 class Config(BaseModel):
     config_version: int = 1
     images: ImagesConfig = Field(default_factory=ImagesConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     compose: ComposeConfig = Field(default_factory=ComposeConfig)
+    vllm: VllmConfig = Field(default_factory=VllmConfig)
 
 
 class Secrets(BaseModel):

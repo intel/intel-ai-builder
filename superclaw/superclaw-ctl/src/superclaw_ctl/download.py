@@ -8,6 +8,7 @@ and optionally checking LFS SHA256 for individual files.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -15,7 +16,6 @@ from pathlib import Path
 from typing import Callable
 
 from huggingface_hub import HfApi, snapshot_download
-from huggingface_hub.utils import HfHubHTTPError
 
 from .registry import VllmModelEntry
 
@@ -49,49 +49,62 @@ def download_model(
     *,
     on_progress: Callable[[str], None] | None = None,
 ) -> DownloadResult:
-    """Download a model snapshot from HuggingFace, with automatic fallback to hf-mirror.com.
+    """Download or sync a model snapshot from HuggingFace.
 
-    Tries huggingface.co first. On network-class errors (timeouts, connection failures,
-    DNS issues), automatically retries using hf-mirror.com as an alternative endpoint.
-    Auth/404 errors are not retried. Proxy settings (HTTP_PROXY, HTTPS_PROXY) apply to
-    both endpoints.
+    Always calls snapshot_download, which is incremental: it checks each file's
+    ETag against the remote manifest and only fetches missing or changed files.
+
+    If the model files are already locally present and the remote is unreachable
+    (network error), the download is treated as a warning rather than a hard
+    failure so that init can still proceed with the local files.
+
+    On network failures without local files, automatically retries via hf-mirror.com.
+    Auth/404 errors are not retried.
     """
     local_dir = models_dir / entry.local_dir_name
 
-    # Quick check: if model directory exists with config.json, likely present
-    if _snapshot_looks_complete(local_dir):
-        if on_progress:
-            on_progress(f"{entry.name}: already present, verifying...")
-        verification = verify_model(entry, models_dir, check_remote=True)
-        if verification.local_valid and verification.remote_matches is not False:
-            if verification.error:
-                return DownloadResult(
-                    model_id=entry.id,
-                    local_dir=local_dir,
-                    already_present=True,
-                    error=(
-                        "Local model files are present, but remote verification failed. "
-                        f"{verification.error}"
-                    ),
-                )
-            return DownloadResult(
-                model_id=entry.id, local_dir=local_dir, already_present=True
-            )
-        if on_progress:
-            on_progress(f"{entry.name}: integrity check failed, re-downloading...")
+    # Determine whether local files are likely usable for offline fallback.
+    # A structurally complete snapshot can still be partial for sharded models.
+    # Apply the same 85% size sanity check used in init when an approximate size
+    # is available.
+    looks_complete = _snapshot_looks_complete(local_dir)
+    was_locally_present = looks_complete
+    approx_size = getattr(entry, "size_bytes_approx", 0)
+    if looks_complete and approx_size > 0:
+        from .models import get_dir_size
 
-    if on_progress:
-        on_progress(f"{entry.name}: downloading from {entry.repo}...")
+        actual_size = get_dir_size(local_dir)
+        was_locally_present = actual_size >= approx_size * 0.85
 
-    # Try primary endpoint (huggingface.co)
+    if was_locally_present:
+        if on_progress:
+            on_progress(f"{entry.name}: verifying files and syncing any missing shards...")
+    else:
+        if on_progress:
+            on_progress(f"{entry.name}: downloading from {entry.repo}...")
+
+    # snapshot_download is incremental: downloads only missing / changed files
     primary_exc = _attempt_snapshot_download(entry, local_dir, endpoint=_HF_PRIMARY_ENDPOINT)
     if primary_exc is None:
         if on_progress:
-            on_progress(f"{entry.name}: download complete.")
-        return DownloadResult(model_id=entry.id, local_dir=local_dir)
+            on_progress(f"{entry.name}: {'verified ✓' if was_locally_present else 'download complete.'}")
+        return DownloadResult(model_id=entry.id, local_dir=local_dir, already_present=was_locally_present)
 
-    # On network errors only, retry via hf-mirror.com
+    # Network errors: special handling when files are already present locally
     if _is_network_error(primary_exc):
+        if was_locally_present:
+            # Files are locally present; can't sync against remote right now.
+            # Treat as a warning so init can still proceed.
+            hint = _proxy_guidance_hint(primary_exc)
+            warn = (
+                "Local model files are present, but remote sync failed. "
+                f"{primary_exc}{hint}"
+            )
+            if on_progress:
+                on_progress(f"{entry.name}: using local files (remote unreachable).")
+            return DownloadResult(model_id=entry.id, local_dir=local_dir, already_present=True, error=warn)
+
+        # No local files — retry via hf-mirror.com
         _log.debug(
             "huggingface.co unreachable for %s (%s), retrying via hf-mirror.com...",
             entry.repo,
@@ -122,7 +135,14 @@ def download_model(
             ),
         )
 
-    # Non-network error (e.g. 401, 404) — don't retry
+    # Non-network error (e.g. 401, 404)
+    if was_locally_present:
+        # Local files exist; treat the remote error as a warning rather than blocking init.
+        hint = _proxy_guidance_hint(primary_exc)
+        warn = f"Remote sync failed: {primary_exc}{hint}"
+        _log.warning("Remote sync failed for %s (local files present): %s", entry.repo, primary_exc)
+        return DownloadResult(model_id=entry.id, local_dir=local_dir, already_present=True, error=warn)
+
     _log.error("Failed to download %s: %s", entry.repo, primary_exc)
     hint = _proxy_guidance_hint(primary_exc)
     return DownloadResult(
@@ -147,7 +167,7 @@ def _attempt_snapshot_download(
             endpoint=endpoint,
         )
         return None
-    except (HfHubHTTPError, OSError, Exception) as exc:
+    except Exception as exc:
         return exc
 
 
@@ -171,13 +191,34 @@ def verify_model(
         result.error = f"Directory not found: {local_dir}"
         return result
 
-    # Check local completeness
-    config_path = local_dir / "config.json"
-    if not config_path.is_file():
-        result.error = "Missing config.json"
+    if not _snapshot_looks_complete(local_dir):
+        result.error = "Model files look incomplete (missing config.json or weight files)."
         return result
 
-    # Read local revision from snapshot metadata
+    local_consistency_error = _validate_local_snapshot_consistency(local_dir)
+    if local_consistency_error:
+        result.error = local_consistency_error
+        return result
+
+    approx = max(0, int(getattr(entry, "size_bytes_approx", 0) or 0))
+    if approx > 0:
+        from .models import format_size
+        weight_size = 0
+        for pattern in ("*.safetensors", "model*.bin", "pytorch_model*.bin", "*.gguf"):
+            for path in local_dir.glob(pattern):
+                try:
+                    if path.is_file():
+                        weight_size += path.stat().st_size
+                except OSError:
+                    continue
+        if weight_size and weight_size < approx * 0.85:
+            result.error = (
+                f"Model appears partially downloaded: {format_size(weight_size)} present, "
+                f"{format_size(approx)} expected."
+            )
+            return result
+
+    # Local integrity checks passed
     local_rev = _read_local_revision(local_dir)
     result.local_revision = local_rev
     result.local_valid = True
@@ -201,18 +242,21 @@ def verify_model(
             # Can't compare revisions; check key files via SHA
             result.remote_matches = _verify_key_files(api, entry, local_dir)
 
-    except HfHubHTTPError as exc:
+    except Exception as exc:
         hint = _proxy_guidance_hint(exc)
         _log.warning("Remote verification failed for %s: %s%s", entry.repo, exc, hint)
         result.remote_matches = None
         result.error = f"Remote check failed: {exc}{hint}"
-    except Exception as exc:
-        hint = _proxy_guidance_hint(exc)
-        _log.warning("Unexpected error verifying %s: %s%s", entry.repo, exc, hint)
-        result.remote_matches = None
-        result.error = f"Remote check failed: {exc}{hint}"
 
     return result
+
+
+def snapshot_looks_complete(local_dir: Path) -> bool:
+    """Quick heuristic: directory exists with config.json and at least one shard.
+
+    Public wrapper used by callers outside this module (e.g. the init pre-flight check).
+    """
+    return _snapshot_looks_complete(local_dir)
 
 
 def _snapshot_looks_complete(local_dir: Path) -> bool:
@@ -221,11 +265,15 @@ def _snapshot_looks_complete(local_dir: Path) -> bool:
         return False
     if not (local_dir / "config.json").is_file():
         return False
-    # Check for safetensors or bin files
+    # Check for weights (or known shard index layouts for sharded repos)
     has_weights = (
         any(local_dir.glob("*.safetensors"))
         or any(local_dir.glob("model*.bin"))
+        or (local_dir / "pytorch_model.bin").is_file()
+        or any(local_dir.glob("pytorch_model-*.bin"))
         or any(local_dir.glob("*.gguf"))
+        or (local_dir / "model.safetensors.index.json").is_file()
+        or (local_dir / "pytorch_model.bin.index.json").is_file()
     )
     return has_weights
 
@@ -253,16 +301,19 @@ def _read_local_revision(local_dir: Path) -> str:
 
 def _verify_key_files(
     api: HfApi, entry: VllmModelEntry, local_dir: Path
-) -> bool:
+) -> bool | None:
     """Verify SHA256 of key model files against HuggingFace remote."""
-    # Find safetensors files to verify (just check the first shard)
-    safetensors = sorted(local_dir.glob("*.safetensors"))
-    if not safetensors:
-        safetensors = sorted(local_dir.glob("model*.bin"))
-    if not safetensors:
-        return True  # No files to verify
+    # Verify one representative weight shard when revision metadata is unavailable
+    # Support both safetensors and sharded pytorch layouts
+    candidate_files = sorted(local_dir.glob("*.safetensors"))
+    if not candidate_files:
+        candidate_files = sorted(local_dir.glob("model*.bin"))
+    if not candidate_files:
+        candidate_files = sorted(local_dir.glob("pytorch_model*.bin"))
+    if not candidate_files:
+        return None  # Can't verify
 
-    target_file = safetensors[0]
+    target_file = candidate_files[0]
     relative_path = target_file.name
 
     try:
@@ -274,19 +325,19 @@ def _verify_key_files(
         )
     except Exception as exc:
         _log.warning("get_paths_info failed for %s: %s", entry.repo, exc)
-        return True  # Can't verify, assume OK
+        return None  # Can't verify
 
     if not paths_info:
-        return True
+        return None
 
     remote_entry = paths_info[0]
     lfs = getattr(remote_entry, "lfs", None)
     if lfs is None:
-        return True
+        return None
 
     remote_sha = getattr(lfs, "sha256", None)
     if not remote_sha:
-        return True
+        return None
 
     # Compute local SHA256
     local_sha = _sha256_file(target_file)
@@ -333,3 +384,42 @@ def _proxy_guidance_hint(exc: Exception) -> str:
         return "\nCheck proxy settings: set HTTP_PROXY/HTTPS_PROXY if your network requires a proxy."
 
     return "\nCheck proxy settings: verify HTTP_PROXY/HTTPS_PROXY and NO_PROXY are correct for your environment."
+
+
+def _validate_local_snapshot_consistency(local_dir: Path) -> str | None:
+    """Validate local shard integrity from known HF index files when present."""
+    index_files = (
+        local_dir / "model.safetensors.index.json",
+        local_dir / "pytorch_model.bin.index.json",
+    )
+
+    for index_path in index_files:
+        if not index_path.is_file():
+            continue
+        try:
+            index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return f"Invalid shard index file {index_path.name}: {exc}"
+
+        weight_map = index_payload.get("weight_map")
+        if not isinstance(weight_map, dict) or not weight_map:
+            return f"Invalid shard index file {index_path.name}: missing weight_map entries."
+
+        shard_files = {str(v) for v in weight_map.values() if isinstance(v, str)}
+        if not shard_files:
+            return f"Invalid shard index file {index_path.name}: no shard filenames listed."
+
+        for shard_name in shard_files:
+            shard_candidate = Path(shard_name)
+            if shard_candidate.is_absolute() or ".." in shard_candidate.parts:
+                return f"Invalid shard index file {index_path.name}: unsafe shard path {shard_name!r}"
+            shard_path = local_dir / shard_candidate
+            if not shard_path.is_file():
+                return f"Missing shard files: {shard_name}"
+            try:
+                if shard_path.stat().st_size <= 0:
+                    return f"Shard file is empty: {shard_name}"
+            except OSError as exc:
+                return f"Unable to read shard file {shard_name}: {exc}"
+
+    return None

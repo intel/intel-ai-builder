@@ -21,6 +21,7 @@ class VllmModelEntry:
     repo: str  # HuggingFace repo_id e.g. "Qwen/Qwen3-Coder-Next"
     revision: str = "main"
     local_dir_name: str = ""
+    size_bytes_approx: int = 0  # Approximate on-disk size after download; 0 means unknown
     vllm_args: dict[str, Any] = field(default_factory=dict)
 
 
@@ -67,6 +68,7 @@ def load_registry(path: Path | None = None) -> VllmRegistry:
             repo=m["repo"],
             revision=m.get("revision", "main"),
             local_dir_name=m.get("local_dir_name", m["id"]),
+            size_bytes_approx=m.get("size_bytes_approx", 0),
             vllm_args=m.get("vllm_args", {}),
         )
         for m in raw["models"]

@@ -9,6 +9,7 @@
       "repo": "Qwen/Qwen3-Coder-Next",
       "revision": "main",
       "local_dir_name": "Qwen3-Coder-Next",
+      "size_bytes_approx": 159376358361,
       "vllm_args": {
         "served_model_name": "Qwen3-Coder-Next",
         "port": 18103,
@@ -25,6 +26,7 @@
       "repo": "KaLM-Embedding/KaLM-embedding-multilingual-mini-instruct-v2.5",
       "revision": "main",
       "local_dir_name": "KaLM-embedding-v2.5",
+      "size_bytes_approx": 1995486434,
       "vllm_args": {
         "served_model_name": "KaLM-embedding-v2.5",
         "port": 18104,

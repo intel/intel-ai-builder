@@ -7,7 +7,7 @@ from pathlib import Path
 import secrets as stdlib_secrets
 import stat
 
-WEAK_TOKENS = {"", "1234qwer", "password", "secret", "admin", "test", "user"}
+WEAK_TOKENS = {"password", "secret", "admin", "test", ""}
 
 
 def generate_key(nbytes: int = 32) -> str:

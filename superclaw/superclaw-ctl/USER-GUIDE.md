@@ -77,7 +77,6 @@ Config saved to /root/.config/superclaw-ctl
 
 Copy and save the full `vllm_api_key`. This is the **connection key** for the SuperClaw Client App.
 
-
 If you miss it, reveal it again later:
 
 ```bash
