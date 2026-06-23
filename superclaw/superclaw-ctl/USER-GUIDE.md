@@ -182,7 +182,7 @@ superclaw-ctl models download --verify
 superclaw-ctl models list
 superclaw-ctl models info Qwen--Qwen3-Coder-Next
 superclaw-ctl models download
-superclaw-ctl models download --model Qwen3-Coder-Next
+uperclaw-ctl models download --model qwen3-coder-next
 superclaw-ctl models download --verify
 ```
 
