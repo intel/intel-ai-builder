@@ -1,4 +1,4 @@
-# tools/superclaw-ctl/packaging
+# superclaw/superclaw-ctl/packaging
 
 Owns the build tooling for distributing `superclaw-ctl` as a single self-contained
 binary.
@@ -7,8 +7,8 @@ binary.
 
 | Area | Owner |
 |------|-------|
-| PyInstaller spec | platform/release team |
-| Build script | platform/release team |
+| PyInstaller spec | project maintainers |
+| Build script | project maintainers |
 
 **Allowed dependencies:** `pyinstaller` (build-only, via `[build]` optional-dep group).
 Not allowed to add runtime deps here.
@@ -24,7 +24,7 @@ packaging/
   README.md                # This file
 ```
 
-## Build
+## Build (on a native Linux host)
 
 PyInstaller **cannot cross-compile** — the binary must be built natively on Linux.
 
@@ -49,14 +49,25 @@ chmod +x packaging/build.sh
 ```bash
 BINARY=dist/superclaw-ctl
 
-# Basic interface
+# Basic interface; these checks do not require initialized config or model files.
 $BINARY --help
 $BINARY version
-$BINARY models list
-$BINARY config show
 ```
 
-All commands should complete without `ModuleNotFoundError`.
+Both commands should complete without `ModuleNotFoundError`. Run
+`$BINARY models list` or `$BINARY config show` only after `superclaw-ctl init`
+has created the local configuration.
+
+## Release builds
+
+Run `packaging/build.sh` on a native Linux host or from your CI system:
+
+```bash
+./packaging/build.sh
+```
+
+The script writes the self-contained binary to `dist/superclaw-ctl`. Configure
+CI artifact upload and release automation according to the hosting repository.
 
 ## glibc compatibility
 

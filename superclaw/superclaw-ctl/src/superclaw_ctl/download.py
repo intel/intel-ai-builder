@@ -227,8 +227,7 @@ def verify_model(
         return result
 
     # Compare with remote HEAD
-    try:
-        api = HfApi()
+    def _apply_remote_model_info(api: HfApi) -> None:
         model_info = api.model_info(
             entry.repo,
             revision=entry.revision,
@@ -242,9 +241,36 @@ def verify_model(
             # Can't compare revisions; check key files via SHA
             result.remote_matches = _verify_key_files(api, entry, local_dir)
 
+    try:
+        api = HfApi()
+        _apply_remote_model_info(api)
     except Exception as exc:
+        if _is_network_error(exc):
+            hint = _proxy_guidance_hint(exc)
+            _log.debug("huggingface.co unreachable for %s (%s), retrying via hf-mirror.com...", entry.repo, exc)
+            try:
+                mirror_api = HfApi(endpoint=_HF_MIRROR_ENDPOINT)
+                _apply_remote_model_info(mirror_api)
+                return result
+            except Exception as mirror_exc:
+                mirror_hint = _proxy_guidance_hint(mirror_exc)
+                _log.debug(
+                    "Remote verification failed for %s via both endpoints: %s%s; %s%s",
+                    entry.repo,
+                    exc,
+                    hint,
+                    mirror_exc,
+                    mirror_hint,
+                )
+                result.remote_matches = None
+                result.error = (
+                    f"Remote check failed: huggingface.co: {exc}; "
+                    f"hf-mirror.com: {mirror_exc}{mirror_hint or hint}"
+                )
+                return result
+
         hint = _proxy_guidance_hint(exc)
-        _log.warning("Remote verification failed for %s: %s%s", entry.repo, exc, hint)
+        _log.debug("Remote verification failed for %s: %s%s", entry.repo, exc, hint)
         result.remote_matches = None
         result.error = f"Remote check failed: {exc}{hint}"
 
@@ -370,6 +396,9 @@ def _is_network_error(exc: Exception) -> bool:
             "max retries exceeded",
             "newconnectionerror",
             "failed to establish",
+            "ssl",
+            "certificate",
+            "certificate verify failed",
         )
     )
 

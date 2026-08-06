@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # build.sh — Build the superclaw-ctl single-file Linux binary with PyInstaller.
 #
-# Run this on Linux
+# Run this on a native Linux build host:
+#
+#   cd <path-to>/superclaw/superclaw-ctl
+#   ./packaging/build.sh
+#
+# Output: dist/superclaw-ctl
 #
 # Prerequisites on the build host:
 #   - Python 3.11+
@@ -17,7 +22,7 @@ set -euo pipefail
 export PATH="${HOME}/.local/bin:${PATH}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"   # tools/superclaw-ctl/
+TOOL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"   # superclaw/superclaw-ctl/
 SPEC="${SCRIPT_DIR}/pyinstaller/superclaw-ctl.spec"
 DIST_DIR="${TOOL_DIR}/dist"
 

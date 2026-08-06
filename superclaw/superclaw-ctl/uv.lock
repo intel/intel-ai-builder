@@ -774,7 +774,7 @@ wheels = [
 
 [[package]]
 name = "superclaw-ctl"
-version = "1.0.0"
+version = "1.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

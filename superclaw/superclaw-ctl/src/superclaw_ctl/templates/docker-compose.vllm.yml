@@ -88,7 +88,7 @@ services:
         echo "[vllm] starting embedding on :18104 (background)"
         (
           export ZE_AFFINITY_MASK=0
-          exec vllm serve /llm/models/KaLM-embedding-v2.5 \
+          exec vllm serve /llm/models/KaLM-Embedding--KaLM-embedding-multilingual-mini-instruct-v2.5 \
             --served-model-name KaLM-embedding-v2.5 \
             --runner pooling --convert embed \
             --port 18104 --host 0.0.0.0 \
@@ -104,7 +104,7 @@ services:
         echo "[vllm] starting chat on :18103 (background)"
         (
           export ZE_AFFINITY_MASK=0,1,2,3
-          exec vllm serve /llm/models/Qwen3-Coder-Next \
+          exec vllm serve /llm/models/Qwen--Qwen3-Coder-Next \
             --served-model-name Qwen3-Coder-Next \
             --port 18103 --host 0.0.0.0 \
             --tensor-parallel-size 4 \

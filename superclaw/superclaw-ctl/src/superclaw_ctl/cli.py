@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import json
+import re
 import os
+import shutil
 import socket
+import uuid
+from dataclasses import dataclass, field
+from difflib import get_close_matches
+import tempfile
 from pathlib import Path
 from typing import Annotated, Optional
 
+import click
 import typer
+from rich.markup import escape
 from rich.panel import Panel
+from typer.core import TyperGroup
 
 from superclaw_ctl import __version__
 from superclaw_ctl.config import (
@@ -41,17 +50,41 @@ from superclaw_ctl.display import (
 )
 from superclaw_ctl.errors import SuperclawCtlError
 
+
+class SingleSuggestGroup(TyperGroup):
+    """Typer group that emits at most one command suggestion per group boundary."""
+
+    SUGGESTION_CUTOFF = 0.6
+
+    def resolve_command(self, ctx: click.Context, args: list[str]) -> tuple[str, click.Command, list[str]]:
+        cmd_name = args[0] if args and not args[0].startswith("-") else None
+        cmd = self.get_command(ctx, cmd_name) if cmd_name is not None else None
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError as exc:
+            if cmd is None and cmd_name is not None:
+                matches = get_close_matches(cmd_name, self.list_commands(ctx), n=1, cutoff=self.SUGGESTION_CUTOFF)
+                base_message = f"No such command '{cmd_name}'."
+                if isinstance(exc, click.exceptions.NoSuchCommand):
+                    exc.possibilities = None
+                if matches:
+                    exc.message = f"{base_message} Did you mean '{matches[0]}'?"
+                else:
+                    exc.message = base_message
+            raise
+
 app = typer.Typer(
+    cls=SingleSuggestGroup,
     name="superclaw-ctl",
     help="Manage SuperClaw vLLM containers and model service.",
     no_args_is_help=True,
     rich_markup_mode="rich",
     add_completion=False,
 )
-models_app = typer.Typer(help="Model management commands.", no_args_is_help=True)
-keys_app = typer.Typer(help="API key management.", no_args_is_help=True)
-config_app = typer.Typer(help="Configuration management.", no_args_is_help=True)
-clean_app = typer.Typer(help="Cleanup commands.", no_args_is_help=True)
+models_app = typer.Typer(cls=SingleSuggestGroup, help="Model management commands.", no_args_is_help=True)
+keys_app = typer.Typer(cls=SingleSuggestGroup, help="API key management.", no_args_is_help=True)
+config_app = typer.Typer(cls=SingleSuggestGroup, help="Configuration management.", no_args_is_help=True)
+clean_app = typer.Typer(cls=SingleSuggestGroup, help="Cleanup commands.", no_args_is_help=True)
 
 app.add_typer(models_app, name="models")
 app.add_typer(keys_app, name="keys")
@@ -218,26 +251,25 @@ _DEFAULT_MODELS_DIR = "~/.models"
 _VLLM_IMAGE_SIZE_BYTES_APPROX = 15 * 1024 ** 3  # ~15 GB for llm-scaler-vllm
 
 
-def _validate_models_dir(models_dir: str) -> str | None:
-    """Return an error message if models_dir cannot be used as a models directory, else None.
+_AMBIGUOUS_MODELS_DIR_VALUES = {"y", "yes", "n", "no"}
 
-    Checks that the path string is non-empty, any existing target is a
-    directory, and that the nearest existing directory ancestor is writable
-    and searchable by the current user.
+
+def _validate_writable_directory(path: Path) -> str | None:
+    """Return an error message if path cannot be used as a writable directory, else None.
+
+    Checks that any existing target is a directory, the nearest existing
+    ancestor is writable/searchable by the current user, and a probe file can
+    actually be created in that directory.
     """
-    if not models_dir.strip():
-        return "Models directory path cannot be empty."
-
-    path = Path(models_dir).expanduser()
     if path.exists() and not path.is_dir():
-        return f"Models directory path exists but is not a directory: {path}"
+        return f"Directory exists but is not a directory: {path}"
 
     # Reject paths where any existing intermediate component is a non-directory,
     # e.g. /file/models where /file is an existing file.
     parent = path.parent
     while parent != parent.parent:
         if parent.exists() and not parent.is_dir():
-            return f"Models directory path has a non-directory parent: {parent}"
+            return f"Path has a non-directory parent: {parent}"
         parent = parent.parent
 
     anchor = path
@@ -250,7 +282,33 @@ def _validate_models_dir(models_dir: str) -> str | None:
     if not os.access(anchor, os.W_OK | os.X_OK):
         return f"Directory is not writable/traversable: {anchor}"
 
+    probe_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=anchor, prefix=".superclaw-ctl-", delete=False) as probe:
+            probe_path = Path(probe.name)
+    except OSError as exc:
+        resolved = anchor.resolve(strict=False)
+        if resolved != anchor:
+            return f"Directory is not writable/traversable: {anchor} -> {resolved} ({exc})"
+        return f"Directory is not writable/traversable: {anchor} ({exc})"
+    finally:
+        if probe_path is not None:
+            probe_path.unlink(missing_ok=True)
+
     return None
+
+
+def _validate_models_dir(models_dir: str) -> str | None:
+    """Return an error message if models_dir cannot be used as a models directory, else None."""
+    stripped = models_dir.strip()
+    if not stripped:
+        return "Models directory path cannot be empty."
+
+    # Reject common typo / confirmation of 'y' or 'n'
+    if stripped.lower() in _AMBIGUOUS_MODELS_DIR_VALUES:
+        return f"'{stripped}' looks like a typo, not a real path."
+
+    return _validate_writable_directory(Path(stripped).expanduser())
 
 
 def _model_download_status(entry, models_dir: Path) -> tuple[str, int]:
@@ -359,10 +417,11 @@ def init(
                 raise typer.Exit(1)
         else:
             while True:
+                # Strip to remove any leading / trailing whitespaces
                 models_dir = typer.prompt(
                     "Where should models be stored? Press enter to use default",
                     default=_DEFAULT_MODELS_DIR,
-                )
+                ).strip()
                 error = _validate_models_dir(models_dir)
                 if error is None:
                     break
@@ -370,6 +429,7 @@ def init(
 
     # When --models-dir is provided explicitly, validate once and abort on failure.
     else:
+        models_dir = models_dir.strip()
         error = _validate_models_dir(models_dir)
         if error:
             print_error(error, hint="Provide a path on a writable filesystem.")
@@ -382,6 +442,13 @@ def init(
     vllm_image = config_default.images.vllm
     images_to_pull = [vllm_image]
     models_path = Path(models_dir).expanduser()
+
+    for entry in active_models:
+        local_dir = models_path / entry.local_dir_name
+        error = _validate_writable_directory(local_dir)
+        if error:
+            print_error(f"Model directory is not writable: {local_dir}", hint=error)
+            raise typer.Exit(1)
 
     # Determine per-model download status and which models actually need downloading.
     if not skip_models:
@@ -431,7 +498,7 @@ def init(
         disk_check = None  # Nothing to download — skip disk check entirely
 
     print_init_plan(
-        models_dir=models_dir,
+        models_dir=str(models_path.resolve()),
         models=active_models,
         disk_check=disk_check,
         images=images_to_pull,
@@ -608,6 +675,13 @@ def up(
 
     proxy_bypass_warning = _warn_if_proxy_missing_local_no_proxy()
 
+    try:
+        from superclaw_ctl.registry import load_registry
+
+        _warn_model_path_staleness(config, load_registry().get_active_models())
+    except Exception:
+        pass  # non-fatal: this is an informational pre-flight check only
+
     project = _get_compose_project(
         config,
         secrets,
@@ -699,6 +773,476 @@ def up(
     print_connection_info(host_ip, ports, secrets.vllm_api_key)
     if router_port != 8080:
         print_warning(f"Use --router-port {router_port} when running `superclaw-ctl status`.")
+
+
+# ─── upgrade ────────────────────────────────────────────────────────────────
+#
+# Bring an existing install's model directory layout and bundled compose
+# file(s) up to date, without rotating VLLM_API_KEY or touching secrets.toml.
+# (`init` is not a safe upgrade path: it always generates a new API key.)
+
+
+def _apply_known_legacy_path_migrations(text: str, active_models: list) -> str:
+    """Rewrite any legacy `/llm/models/<dir>` path in `text` to its canonical
+    name, per the registry's `legacy_local_dir_name` -> `local_dir_name` map.
+
+    Used to prove a modified compose file's only difference from the bundled
+    template is a known legacy model path, so it's safe to auto-replace -
+    without maintaining a hash whitelist that a maintainer must remember to
+    update on every template change.
+    """
+    migrated = text
+    for entry in active_models:
+        legacy_name = str(getattr(entry, "legacy_local_dir_name", "")).strip()
+        canonical_name = str(getattr(entry, "local_dir_name", "")).strip()
+        if not legacy_name or legacy_name == canonical_name:
+            continue
+        migrated = migrated.replace(f"/llm/models/{legacy_name}", f"/llm/models/{canonical_name}")
+    return migrated
+
+
+@dataclass(slots=True)
+class _ModelDirMigrationPlan:
+    """Planned legacy->canonical model directory renames (no filesystem mutation)."""
+
+    renames: list[tuple[object, Path, Path]] = field(default_factory=list)
+    # entries whose legacy dir name is shared by >1 active model.
+    conflicts: list[tuple[str, list[object]]] = field(default_factory=list)
+    # entries where both the legacy and canonical dirs already exist.
+    skipped_both_exist: list[tuple[object, Path, Path]] = field(default_factory=list)
+
+
+def _plan_model_dir_migration(models_path: Path, selected_models: list) -> _ModelDirMigrationPlan:
+    """Compute the legacy->canonical model directory rename plan.
+
+    Read-only planning; shared by `models migrate-layout` and `upgrade`.
+    """
+    candidates: list[tuple[object, str, str]] = []
+    legacy_name_to_entries: dict[str, list[object]] = {}
+    for entry in selected_models:
+        legacy_name = str(getattr(entry, "legacy_local_dir_name", "")).strip()
+        canonical_name = str(getattr(entry, "local_dir_name", "")).strip()
+        if not legacy_name or not canonical_name or legacy_name == canonical_name:
+            continue
+        candidates.append((entry, legacy_name, canonical_name))
+        legacy_name_to_entries.setdefault(legacy_name, []).append(entry)
+
+    conflicts = [
+        (legacy_name, entries)
+        for legacy_name, entries in legacy_name_to_entries.items()
+        if len(entries) > 1 and (models_path / legacy_name).is_dir()
+    ]
+    if conflicts:
+        return _ModelDirMigrationPlan(conflicts=conflicts)
+
+    renames: list[tuple[object, Path, Path]] = []
+    skipped_both_exist: list[tuple[object, Path, Path]] = []
+    for entry, legacy_name, canonical_name in candidates:
+        legacy_path = models_path / legacy_name
+        canonical_path = models_path / canonical_name
+        if not legacy_path.is_dir():
+            continue
+        if canonical_path.exists():
+            skipped_both_exist.append((entry, legacy_path, canonical_path))
+            continue
+        renames.append((entry, legacy_path, canonical_path))
+
+    return _ModelDirMigrationPlan(renames=renames, skipped_both_exist=skipped_both_exist)
+
+
+def _rename_model_dirs(
+    renames: list[tuple[object, Path, Path]],
+) -> tuple[list[tuple[object, Path, Path]], list[tuple[object, Path, Path, Exception]]]:
+    """Apply a validated rename plan. Returns (succeeded, failed)."""
+    succeeded: list[tuple[object, Path, Path]] = []
+    failed: list[tuple[object, Path, Path, Exception]] = []
+    for entry, legacy_path, canonical_path in renames:
+        try:
+            legacy_path.rename(canonical_path)
+        except OSError as exc:
+            failed.append((entry, legacy_path, canonical_path, exc))
+            continue
+        succeeded.append((entry, legacy_path, canonical_path))
+    return succeeded, failed
+
+
+def _rollback_model_dir_renames(succeeded: list[tuple[object, Path, Path]]) -> list[tuple[object, Path, Path, Exception]]:
+    """Best-effort revert of successful renames (canonical -> legacy), in reverse order.
+
+    Returns the entries that failed to roll back, so the caller can report
+    an accurate outcome instead of assuming a full rollback succeeded.
+    """
+    rollback_failed: list[tuple[object, Path, Path, Exception]] = []
+    for entry, legacy_path, canonical_path in reversed(succeeded):
+        try:
+            canonical_path.rename(legacy_path)
+        except OSError as exc:
+            rollback_failed.append((entry, legacy_path, canonical_path, exc))
+    return rollback_failed
+
+
+@dataclass(slots=True)
+class _TemplateRefreshDecision:
+    template_name: str
+    target_path: Path
+    bundled_content: bytes
+    # "no_op" (already current) | "create_new" (no file yet) |
+    # "safe_replace" (only a recognized legacy model path differs) |
+    # "needs_force" (unrecognized/modified)
+    action: str
+
+
+def _plan_template_refresh(config: Config, active_models: list) -> list[_TemplateRefreshDecision]:
+    """Decide, for each bundled compose template, whether it's safe to auto-replace.
+
+    A modified file is "safe_replace" only if migrating its legacy model
+    paths (`_apply_known_legacy_path_migrations`) makes it byte-identical to
+    the bundled template. Any other difference requires `--force`.
+    """
+    import importlib.resources
+
+    compose_dir = Path(config.paths.compose_dir).expanduser()
+    templates_pkg = importlib.resources.files("superclaw_ctl.templates")
+    decisions: list[_TemplateRefreshDecision] = []
+    for template_name in ["docker-compose.vllm.yml"]:
+        bundled_content = templates_pkg.joinpath(template_name).read_bytes()
+        target_path = compose_dir / template_name
+        if not target_path.exists():
+            decisions.append(_TemplateRefreshDecision(template_name, target_path, bundled_content, "create_new"))
+            continue
+
+        existing_content = target_path.read_bytes()
+        if existing_content == bundled_content:
+            decisions.append(_TemplateRefreshDecision(template_name, target_path, bundled_content, "no_op"))
+            continue
+
+        try:
+            existing_text = existing_content.decode("utf-8")
+            bundled_text = bundled_content.decode("utf-8")
+        except UnicodeDecodeError:
+            action = "needs_force"
+        else:
+            migrated_text = _apply_known_legacy_path_migrations(existing_text, active_models)
+            action = "safe_replace" if migrated_text == bundled_text else "needs_force"
+        decisions.append(_TemplateRefreshDecision(template_name, target_path, bundled_content, action))
+    return decisions
+
+
+def _write_template_atomic(decision: _TemplateRefreshDecision) -> None:
+    """Write the bundled template to disk atomically, backing up any existing file.
+
+    Caller is responsible for checking `decision.action` is not `needs_force`
+    without `--force` before calling. No-op for `no_op`.
+    """
+    if decision.action == "no_op":
+        return
+
+    decision.target_path.parent.mkdir(parents=True, exist_ok=True)
+    if decision.target_path.exists():
+        backup_path = Path(str(decision.target_path) + ".bak")
+        shutil.copy2(decision.target_path, backup_path)
+
+    temp_path = decision.target_path.parent / f".{decision.target_path.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        temp_path.write_bytes(decision.bundled_content)
+        os.replace(temp_path, decision.target_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
+_VLLM_SERVE_PATH_RE = re.compile(r"vllm serve\s+(\S+)")
+
+
+@dataclass(slots=True)
+class _ModelPathDiagnosis:
+    entry_name: str
+    legacy_dir_name: str
+    canonical_dir_name: str
+    compose_file: Path
+    is_extra_file: bool
+    references_legacy_path: bool
+    canonical_dir_missing: bool
+
+
+def _diagnose_model_path_staleness(config: Config, active_models: list) -> list[_ModelPathDiagnosis]:
+    """Check whether resolved compose files or on-disk model dirs are still on the legacy layout.
+
+    Non-mutating; used by both `upgrade`'s summary and `up`'s pre-flight warning.
+    """
+    compose_files = _resolve_compose_files(config)
+    if not compose_files:
+        return []
+    base_file = compose_files[0]
+    models_path = Path(config.paths.models_dir).expanduser()
+
+    diagnoses: list[_ModelPathDiagnosis] = []
+    flagged_entry_ids: set[str] = set()
+
+    for compose_file in compose_files:
+        if not compose_file.exists():
+            continue
+        try:
+            text = compose_file.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        matched_paths = {match.rstrip("/") for match in _VLLM_SERVE_PATH_RE.findall(text)}
+
+        for entry in active_models:
+            legacy_name = str(getattr(entry, "legacy_local_dir_name", "")).strip()
+            canonical_name = str(getattr(entry, "local_dir_name", "")).strip()
+            if not legacy_name or legacy_name == canonical_name:
+                continue
+            if f"/llm/models/{legacy_name}" not in matched_paths:
+                continue
+            diagnoses.append(
+                _ModelPathDiagnosis(
+                    entry_name=entry.name,
+                    legacy_dir_name=legacy_name,
+                    canonical_dir_name=canonical_name,
+                    compose_file=compose_file,
+                    is_extra_file=(compose_file != base_file),
+                    references_legacy_path=True,
+                    canonical_dir_missing=not (models_path / canonical_name).is_dir(),
+                )
+            )
+            flagged_entry_ids.add(entry.id)
+
+    # Separately flag the {canonical compose, legacy/missing dir} case, which the
+    # text-only check above cannot see.
+    for entry in active_models:
+        if entry.id in flagged_entry_ids:
+            continue
+        canonical_name = str(getattr(entry, "local_dir_name", "")).strip()
+        legacy_name = str(getattr(entry, "legacy_local_dir_name", "")).strip()
+        if not canonical_name:
+            continue
+        if (models_path / canonical_name).is_dir():
+            continue
+        diagnoses.append(
+            _ModelPathDiagnosis(
+                entry_name=entry.name,
+                legacy_dir_name=legacy_name,
+                canonical_dir_name=canonical_name,
+                compose_file=base_file,
+                is_extra_file=False,
+                references_legacy_path=False,
+                canonical_dir_missing=True,
+            )
+        )
+
+    return diagnoses
+
+
+def _warn_model_path_staleness(config: Config, active_models: list) -> None:
+    """Print non-fatal warnings if compose files or model dirs look stale/legacy."""
+    diagnoses = _diagnose_model_path_staleness(config, active_models)
+    for diagnosis in diagnoses:
+        if diagnosis.references_legacy_path:
+            scope = (
+                "an extra compose file (`upgrade` will not modify this automatically; edit it manually)"
+                if diagnosis.is_extra_file
+                else "the managed compose template"
+            )
+            print_warning(
+                f"{diagnosis.compose_file} still references the legacy model directory "
+                f"'{diagnosis.legacy_dir_name}' for {diagnosis.entry_name} ({scope})."
+            )
+        elif diagnosis.canonical_dir_missing:
+            print_warning(
+                f"Expected model directory for {diagnosis.entry_name} "
+                f"('{diagnosis.canonical_dir_name}') was not found on disk."
+            )
+    if diagnoses:
+        print_warning("Run `superclaw-ctl upgrade` to migrate model directories and refresh compose templates.")
+
+
+@app.command()
+def upgrade(
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite a compose file that doesn't match a known bundled version (i.e. was hand-modified)."),
+    ] = False,
+    verbose: Verbose = False,
+) -> None:
+    """Migrate model directories and refresh bundled compose file(s) without rotating API keys.
+
+    Safe upgrade path for existing installs: unlike re-running `init`, this
+    never generates a new `VLLM_API_KEY` or touches secrets.toml.
+    """
+    if not config_exists():
+        print_error(
+            "No existing configuration found.",
+            hint="Run `superclaw-ctl init` to set up superclaw-ctl for the first time.",
+        )
+        raise typer.Exit(1)
+
+    try:
+        config = load_config()
+    except SuperclawCtlError as exc:
+        _handle_error(exc)
+        return
+
+    # Refuse to proceed while containers are running
+    try:
+        secrets_for_check = load_secrets() if secrets_exists() else Secrets()
+        project = _get_compose_project(config, secrets_for_check)
+        running_containers = project.ps()
+    except SuperclawCtlError as exc:
+        if force:
+            print_warning(f"Could not verify running container state ({exc.message}); proceeding due to --force.")
+            running_containers = []
+        else:
+            print_error(
+                "Could not verify whether containers are currently running.",
+                hint=(
+                    f"{exc.message}\n"
+                    "Stop them manually first (`superclaw-ctl down`), or re-run with `--force` "
+                    "if you are sure no containers are running."
+                ),
+            )
+            raise typer.Exit(1)
+    if running_containers:
+        print_error(
+            "Containers are currently running.",
+            hint="Run `superclaw-ctl down`, then `superclaw-ctl upgrade`, then `superclaw-ctl up`.",
+        )
+        raise typer.Exit(1)
+
+    try:
+        from superclaw_ctl.registry import load_registry
+
+        registry = load_registry()
+        active_models = registry.get_active_models()
+    except Exception as exc:
+        print_error(
+            f"Failed to load model registry: {exc}",
+            hint="Check superclaw_ctl/vllm_models.json and retry.",
+        )
+        raise typer.Exit(1)
+    models_path = Path(config.paths.models_dir).expanduser()
+
+    # ── Plan phase (no mutation) ────────────────────────────────────────────
+    migration_plan = (
+        _plan_model_dir_migration(models_path, active_models)
+        if models_path.is_dir()
+        else _ModelDirMigrationPlan()
+    )
+
+    if migration_plan.conflicts:
+        details = "; ".join(
+            f"{legacy_name} -> {', '.join(str(getattr(e, 'repo', getattr(e, 'id', 'unknown'))) for e in entries)}"
+            for legacy_name, entries in migration_plan.conflicts
+        )
+        print_error(
+            "Cannot upgrade: ambiguous legacy model directories detected.",
+            hint=f"Conflicts: {details}. Resolve manually (see `models migrate-layout`) before retrying.",
+        )
+        raise typer.Exit(1)
+
+    if migration_plan.skipped_both_exist:
+        for entry, legacy_path, canonical_path in migration_plan.skipped_both_exist:
+            print_warning(
+                f"Skipping {entry.name}: both legacy and canonical directories exist "
+                f"({legacy_path} and {canonical_path})."
+            )
+        print_error(
+            "Cannot safely complete model directory migration.",
+            hint="Resolve the conflicts above, then re-run `superclaw-ctl upgrade`.",
+        )
+        raise typer.Exit(1)
+
+    try:
+        template_decisions = _plan_template_refresh(config, active_models)
+    except OSError as exc:
+        print_error(
+            f"Failed to inspect compose templates: {exc}",
+            hint="Check template and compose file permissions, then retry `superclaw-ctl upgrade`.",
+        )
+        raise typer.Exit(1)
+    blocking = [d for d in template_decisions if d.action == "needs_force" and not force]
+    if blocking:
+        for decision in blocking:
+            print_warning(
+                f"{decision.target_path} does not match a known bundled template version "
+                "(it looks hand-modified) and will not be auto-replaced."
+            )
+            try:
+                existing_text = decision.target_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError as exc:
+                print_warning(f"Could not read {decision.target_path} for context: {exc}")
+                continue
+            for entry in active_models:
+                legacy_name = str(getattr(entry, "legacy_local_dir_name", "")).strip()
+                if not legacy_name:
+                    continue
+                for line in existing_text.splitlines():
+                    if f"/llm/models/{legacy_name}" in line:
+                        # escape() prevents file content (e.g. a line-continuation
+                        # backslash before this f-string's closing "[/dim]") from
+                        # being misparsed as Rich markup.
+                        console.print(f"  [dim]{escape(line.strip())}[/dim]")
+        print_error(
+            "Compose file was modified and cannot be safely auto-replaced.",
+            hint="Re-run with `--force` to overwrite it (a backup is kept at <file>.bak), or edit it manually.",
+        )
+        raise typer.Exit(1)
+
+    # ── Execute phase ───────────────────────────────────────────────────────
+    succeeded, failed = _rename_model_dirs(migration_plan.renames)
+    if failed:
+        rollback_failed = _rollback_model_dir_renames(succeeded)
+        for entry, legacy_path, canonical_path, exc in failed:
+            print_warning(f"{entry.name}: migration failed ({legacy_path} -> {canonical_path}): {exc}")
+        if rollback_failed:
+            for entry, legacy_path, canonical_path, exc in rollback_failed:
+                print_warning(f"{entry.name}: rollback failed, left as {canonical_path.name} ({exc}); rename manually to {legacy_path.name}.")
+            print_error(
+                "Model directory migration failed; rollback was incomplete.",
+                hint="Manually rename the directories listed above back to their original names, then retry `superclaw-ctl upgrade`.",
+            )
+        else:
+            print_error(
+                "Model directory migration failed; rolled back all renames.",
+                hint="Resolve the error above and retry `superclaw-ctl upgrade`.",
+            )
+        raise typer.Exit(1)
+
+    try:
+        for decision in template_decisions:
+            _write_template_atomic(decision)
+    except OSError as exc:
+        rollback_failed = _rollback_model_dir_renames(succeeded)
+        if rollback_failed:
+            for entry, legacy_path, canonical_path, rollback_exc in rollback_failed:
+                print_warning(f"{entry.name}: rollback failed, left as {canonical_path.name} ({rollback_exc}); rename manually to {legacy_path.name}.")
+            print_error(
+                f"Failed to refresh compose template: {exc}",
+                hint="Model directory rollback was incomplete; manually rename the directories listed above.",
+            )
+        else:
+            print_error(
+                f"Failed to refresh compose template: {exc}",
+                hint="Model directory renames were rolled back; no changes were left partially applied.",
+            )
+        raise typer.Exit(1)
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    if succeeded:
+        for entry, legacy_path, canonical_path in succeeded:
+            print_success(f"{entry.name}: migrated {legacy_path.name} -> {canonical_path.name}")
+    else:
+        print_success("No legacy model directories needed migration.")
+
+    for decision in template_decisions:
+        if decision.action == "no_op":
+            console.print(f"[dim]{decision.target_path.name}: already up to date.[/dim]")
+        elif decision.action == "create_new":
+            print_success(f"{decision.target_path.name}: created.")
+        else:  # safe_replace, or needs_force overridden by --force
+            print_success(f"{decision.target_path.name}: refreshed (previous version backed up to {decision.target_path.name}.bak).")
+
+    print_success("Upgrade complete. Run `superclaw-ctl up` to apply changes.")
 
 
 # ─── down ───────────────────────────────────────────────────────────────────
@@ -1099,36 +1643,16 @@ def models_info(
 
 @models_app.command("download")
 def models_download(
-    model: Annotated[Optional[str], typer.Option("--model", help="Specific model id to download/verify. Defaults to all active models.")] = None,
+    model: Annotated[Optional[str], typer.Option("--model", help="Specific model id, name, repo, local dir name, or HuggingFace repo id (owner/name) to download/verify. Defaults to all active models.")] = None,
     verify: Annotated[bool, typer.Option("--verify", help="Verify integrity only (no download/repair).")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip download confirmation prompts for models missing locally.")] = False,
     verbose: Verbose = False,
 ) -> None:
     """Download/sync active models, or verify model integrity with --verify."""
     from superclaw_ctl.checks import check_model_integrity
-    from superclaw_ctl.registry import load_registry
 
-    try:
-        config = load_config()
-    except SuperclawCtlError as exc:
-        _handle_error(exc)
-        return
-
-    try:
-        registry = load_registry()
-        active_models = registry.get_active_models()
-    except Exception as exc:
-        print_error(
-            f"Failed to load model registry: {exc}",
-            hint="Check superclaw_ctl/vllm_models.json and retry.",
-        )
-        raise typer.Exit(1)
-    if model:
-        selected_models = [entry for entry in active_models if entry.id == model]
-        if not selected_models:
-            print_error(f"Unknown active model id: {model}")
-            raise typer.Exit(1)
-    else:
-        selected_models = active_models
+    config, active_models = _load_config_and_active_models()
+    selected_models = _resolve_model_selector(model, active_models)
 
     if not selected_models:
         print_warning("No active models configured.")
@@ -1148,6 +1672,16 @@ def models_download(
     models_path.mkdir(parents=True, exist_ok=True)
     failed = False
     for entry in selected_models:
+        if not yes and not _model_present_locally(entry, models_path):
+            confirmed = typer.confirm(
+                f"{entry.name} was not found locally. Download from Hugging Face?",
+                default=False,
+            )
+            if not confirmed:
+                print_warning(f"Skipped {entry.name}: not downloaded.")
+                failed = True
+                continue
+
         console.print(f"[bold]Downloading model[/bold] {entry.name}...")
         dl_result = _download_model_entry(
             entry,
@@ -1171,10 +1705,180 @@ def models_download(
         raise typer.Exit(1)
 
 
+def _model_matches_selector(entry, selector: str) -> bool:
+    wanted = selector.strip().casefold()
+    if not wanted:
+        return False
+
+    candidates = (
+        getattr(entry, "id", ""),
+        getattr(entry, "name", ""),
+        getattr(entry, "repo", ""),
+        getattr(entry, "local_dir_name", ""),
+    )
+    return any(isinstance(candidate, str) and candidate.strip().casefold() == wanted for candidate in candidates)
+
+
+def _load_config_and_active_models() -> tuple[Config, list]:
+    """Load config and the active model registry entries, or raise typer.Exit on failure."""
+    from superclaw_ctl.registry import load_registry
+
+    try:
+        config = load_config()
+    except SuperclawCtlError as exc:
+        _handle_error(exc)
+        raise typer.Exit(1)  # unreachable: _handle_error always raises typer.Exit
+
+    try:
+        registry = load_registry()
+        active_models = registry.get_active_models()
+    except Exception as exc:
+        print_error(
+            f"Failed to load model registry: {exc}",
+            hint="Check superclaw_ctl/vllm_models.json and retry.",
+        )
+        raise typer.Exit(1)
+
+    return config, active_models
+
+
+def _resolve_model_selector(model: str | None, active_models: list, *, allow_adhoc: bool = True) -> list:
+    """Resolve a --model selector to matching entries, or raise typer.Exit if none match.
+
+    Returns active_models unchanged when model is None. Otherwise matches against
+    id/name/repo/local-dir-name, falling back to an ad-hoc HuggingFace repo id when
+    allow_adhoc is True. Ad-hoc entries have no legacy_local_dir_name, so callers that
+    depend on that field (e.g. migrate-layout) should pass allow_adhoc=False.
+    """
+    if not model:
+        return active_models
+
+    selected_models = [entry for entry in active_models if _model_matches_selector(entry, model)]
+    if selected_models:
+        return selected_models
+
+    if allow_adhoc:
+        adhoc = _build_adhoc_model_entry(model)
+        if adhoc is not None:
+            return [adhoc]
+
+    print_error(
+        f"Unknown active model selector: {model}",
+        hint="Match a model by id/name/repo/local-dir, or pass a HuggingFace repo id (owner/name).",
+    )
+    raise typer.Exit(1)
+
+
+def _model_present_locally(entry, models_path: Path) -> bool:
+    from superclaw_ctl.download import snapshot_looks_complete
+
+    return snapshot_looks_complete(models_path / entry.local_dir_name)
+
+
+@models_app.command("migrate-layout")
+def models_migrate_layout(
+    model: Annotated[Optional[str], typer.Option("--model", help="Specific model id, name, repo, local dir name, or HuggingFace repo id (owner/name) to migrate. Defaults to all active models.")] = None,
+    apply: Annotated[bool, typer.Option("--apply", help="Rename directories on disk. Default is dry-run preview only.")] = False,
+) -> None:
+    """Migrate legacy model directory names to canonical owner-scoped layout."""
+    config, active_models = _load_config_and_active_models()
+    selected_models = _resolve_model_selector(model, active_models, allow_adhoc=False)
+
+    if not selected_models:
+        print_warning("No active models configured.")
+        return
+
+    models_path = Path(config.paths.models_dir).expanduser()
+    if not models_path.is_dir():
+        print_warning(f"Models directory not found: {models_path}")
+        return
+
+    migration_plan = _plan_model_dir_migration(models_path, selected_models)
+
+    if migration_plan.conflicts:
+        details = "; ".join(
+            f"{legacy_name} -> {', '.join(str(getattr(entry, 'repo', getattr(entry, 'id', 'unknown'))) for entry in entries)}"
+            for legacy_name, entries in migration_plan.conflicts
+        )
+        print_error(
+            "Cannot migrate ambiguous legacy model directories.",
+            hint=f"Conflicts: {details}. Migrate manually to canonical owner-scoped paths first.",
+        )
+        raise typer.Exit(1)
+
+    failures = bool(migration_plan.skipped_both_exist)
+    for entry, legacy_path, canonical_path in migration_plan.skipped_both_exist:
+        print_warning(
+            f"Skipping {entry.name}: both legacy and canonical directories exist "
+            f"({legacy_path} and {canonical_path})."
+        )
+
+    plan = migration_plan.renames
+    if not plan:
+        if failures:
+            print_warning("Some legacy model directories exist but cannot be migrated automatically.")
+            if apply:
+                raise typer.Exit(1)
+            return
+        print_success("No legacy model directories need migration.")
+        return
+
+    if not apply:
+        for entry, legacy_path, canonical_path in plan:
+            console.print(f"[dim]DRY-RUN[/dim] {entry.name}: {legacy_path} -> {canonical_path}")
+        console.print(
+            "[dim]Run `superclaw-ctl models migrate-layout --apply` to execute these renames.[/dim]"
+        )
+        return
+
+    succeeded, failed = _rename_model_dirs(plan)
+    for entry, legacy_path, canonical_path in succeeded:
+        print_success(f"{entry.name}: migrated {legacy_path.name} -> {canonical_path.name}")
+    for entry, legacy_path, canonical_path, exc in failed:
+        print_warning(f"{entry.name}: migration failed ({legacy_path} -> {canonical_path}): {exc}")
+        failures = True
+
+    if failures:
+        raise typer.Exit(1)
+
+
+def _build_adhoc_model_entry(selector: str):
+    from superclaw_ctl.registry import VllmModelEntry
+
+    repo = selector.strip()
+    if repo.count("/") != 1:
+        return None
+    owner, name = (part.strip() for part in repo.split("/", 1))
+    if not owner or not name:
+        return None
+    normalized_repo = f"{owner}/{name}"
+    return VllmModelEntry(
+        id=normalized_repo,
+        name=name,
+        role="chat",
+        repo=normalized_repo,
+        revision="main",
+        local_dir_name=_adhoc_local_dir_name(normalized_repo),
+        size_bytes_approx=0,
+        vllm_args={},
+    )
+
+
+def _adhoc_local_dir_name(repo: str) -> str:
+    normalized = repo.replace("\\", "/")
+    base = normalized.replace("/", "--")
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", base).strip("-.")
+    return safe or "model"
+
+
 def _download_model_entry(entry, models_path: Path, *, on_progress):
     from superclaw_ctl.download import download_model
 
     return download_model(entry, models_path, on_progress=on_progress)
+
+
+def main() -> None:
+    app()
 
 
 # ─── keys ───────────────────────────────────────────────────────────────────

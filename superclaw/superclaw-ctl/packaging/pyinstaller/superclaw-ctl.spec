@@ -2,7 +2,7 @@
 # PyInstaller spec for superclaw-ctl — single onefile Linux x86_64 binary.
 #
 # Build (on the Linux server):
-#   cd tools/superclaw-ctl
+#   cd superclaw/superclaw-ctl
 #   uv sync --extra build
 #   uv run pyinstaller packaging/pyinstaller/superclaw-ctl.spec
 #
@@ -15,7 +15,7 @@ from pathlib import Path
 # Locate the package so we can reference bundled data files
 # ---------------------------------------------------------------------------
 HERE = Path(SPECPATH)  # directory of this spec file
-SRC = HERE.parent.parent / "src"  # tools/superclaw-ctl/src
+SRC = HERE.parent.parent / "src"  # superclaw/superclaw-ctl/src
 
 a = Analysis(
     [str(HERE / "entry.py")],

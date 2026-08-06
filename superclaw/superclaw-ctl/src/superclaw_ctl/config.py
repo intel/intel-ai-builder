@@ -14,8 +14,8 @@ from superclaw_ctl.errors import ConfigError, SecretsError
 
 _CONFIG_FILE_NAME = "config.toml"
 _SECRETS_FILE_NAME = "secrets.toml"
-_REJECTED_TOKENS = frozenset({"", "password", "secret", "admin", "test"})
-# Escape hatch: set this env var truthy to allow known demo/weak tokens
+_REJECTED_TOKENS = frozenset({"", "intel123", "1234qwer", "password", "secret", "admin", "test"})
+# Escape hatch: set this env var truthy to allow known demo/weak tokens (e.g. `intel123`).
 # An empty key is always rejected regardless, since it cannot authenticate anything.
 _ALLOW_DEMO_KEY_ENV = "SUPERCLAW_ALLOW_DEMO_KEY"
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
