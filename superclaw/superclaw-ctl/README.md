@@ -2,6 +2,9 @@
 
 CLI tool for managing SuperClaw vLLM model serving on Linux servers with Intel Arc GPUs.
 
+See [CHANGELOG.md](CHANGELOG.md) for release notes and
+[MIGRATION.md](MIGRATION.md) for upgrading an existing installation.
+
 ## Prerequisites
 
 - Python 3.11+ with [`uv`](https://docs.astral.sh/uv/)
