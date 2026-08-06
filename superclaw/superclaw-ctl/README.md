@@ -130,7 +130,7 @@ Config is stored at `~/.config/superclaw-ctl/`:
 |---|---|
 | `SUPERCLAW_VLLM_API_KEY` | secrets.vllm_api_key |
 | `SUPERCLAW_MODELS_DIR` | config.paths.models_dir |
-| `SUPERCLAW_ALLOW_DEMO_KEY` | When truthy (`1`/`true`/`yes`/`on`), allows known demo/weak tokens (e.g. `intel123`). Empty keys are still rejected. Intended for local testing only. |
+| `SUPERCLAW_ALLOW_DEMO_KEY` | When truthy (`1`/`true`/`yes`/`on`), allows known demo/weak tokens. Empty keys are still rejected. Intended for local testing only. |
 
 ### Proxy Support
 
