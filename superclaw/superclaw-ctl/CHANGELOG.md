@@ -2,7 +2,6 @@
 
 All notable changes to `superclaw-ctl` are documented here.
 
-<<<<<< HEAD
 ## [1.2.0] - 2026-08-10
 
 ### Added
