@@ -187,6 +187,15 @@ uv run superclaw-ctl down
 
 ## Troubleshooting
 
+### GPU minimum requirement and detection
+
+`superclaw-ctl init` prefers `xpu-smi` for GPU discovery. If `xpu-smi` is
+missing or does not return complete PCI device IDs, `init` uses `lspci -nn` as
+a fallback and prints a warning.
+
+The minimum check requires Intel Arc Pro B70 devices with PCI ID `8086:E223`
+and corresponding `/dev/dri/renderD*` nodes.
+
 ### Breaking change: model directory naming
 
 `superclaw-ctl` now uses canonical owner-scoped model directories derived from HuggingFace repo IDs:

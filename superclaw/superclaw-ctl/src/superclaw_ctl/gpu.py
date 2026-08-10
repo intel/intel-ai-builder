@@ -22,6 +22,10 @@ class GPUInfo:
     pci_id: str = ""  # Uppercase hex device ID, e.g. "E223". Empty if unavailable.
 
 
+# PCIe class code for Display controllers is 0x03
+_DISPLAY_CLASS_RE = re.compile(r"\[03[0-9A-Fa-f]{2}\]\s*:")
+
+
 def _run(*argv: str) -> str:
     result = subprocess.run(argv, capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else ""
@@ -79,21 +83,68 @@ def _parse_lspci_pci_id(line: str) -> str:
     return match.group(1).upper() if match else ""
 
 
-def detect_gpus() -> list[GPUInfo]:
-    """Detect Intel Arc GPUs. Returns empty list if none found."""
-    render_nodes = sorted(Path("/dev/dri").glob("renderD*")) if Path("/dev/dri").exists() else []
-    if shutil.which("xpu-smi"):
+def _is_display_class_line(line: str) -> bool:
+    """Return whether an lspci line describes a Display-class PCI function."""
+    return _DISPLAY_CLASS_RE.search(line) is not None
+
+
+def _get_render_nodes() -> list[Path]:
+    """Return render nodes exposed by the host."""
+    dri = Path("/dev/dri")
+    return sorted(dri.glob("renderD*")) if dri.exists() else []
+
+
+def _fallback_warning(reason: str) -> str:
+    guidance = (
+        "Install xpu-smi for reliable detection."
+        if reason == "xpu-smi is not installed"
+        else "Check xpu-smi output and the Intel GPU driver for complete PCI IDs."
+    )
+    return (
+        f"GPU detection used the lspci fallback ({reason}); GPU count may be inaccurate. "
+        f"{guidance}"
+    )
+
+
+def _render_node_mismatch_warning(source: str, detected_count: int, render_count: int) -> str:
+    return (
+        f"{source} detected {detected_count} GPU(s), but {render_count} "
+        "/dev/dri/renderD* device(s) are available; only render-node-backed GPUs will be counted."
+    )
+
+
+def _bound_xpu_gpus(discovered: list[GPUInfo], render_nodes: list[Path], warnings: list[str]) -> list[GPUInfo]:
+    if len(discovered) != len(render_nodes):
+        warnings.append(_render_node_mismatch_warning("xpu-smi", len(discovered), len(render_nodes)))
+    usable = discovered[: len(render_nodes)]
+    for index, info in enumerate(usable):
+        info.device_path = str(render_nodes[index])
+    return usable
+
+
+def detect_gpus_with_diagnostics() -> tuple[list[GPUInfo], list[str]]:
+    """Detect GPUs and return warnings about fallback or runtime visibility."""
+    render_nodes = _get_render_nodes()
+    warnings: list[str] = []
+    xpu_smi = shutil.which("xpu-smi")
+    if xpu_smi:
         discovered = _parse_xpu_discovery(_run("xpu-smi", "discovery", "-j") or _run("xpu-smi", "discovery"))
         if discovered and all(gpu.pci_id for gpu in discovered):
-            # xpu-smi found GPUs with PCI IDs
-            for index, info in enumerate(discovered):
-                if info.device_path.startswith("/dev/dri/renderD") and index < len(render_nodes):
-                    info.device_path = str(render_nodes[index])
-            return discovered
-        # xpu-smi either found no devices or they lack pci_id, fallback to use lspci
+            return _bound_xpu_gpus(discovered, render_nodes, warnings), warnings
+        fallback_reason = "xpu-smi returned no complete PCI IDs"
+    else:
+        fallback_reason = "xpu-smi is not installed"
+
     lspci = _run("lspci", "-nn") if shutil.which("lspci") else ""
-    intel_lines = [line for line in lspci.splitlines() if "Intel" in line and ("VGA" in line or "Display" in line)]
-    return [
+    intel_lines = [
+        line
+        for line in lspci.splitlines()
+        if "Intel" in line and _is_display_class_line(line)
+    ]
+    warnings.append(_fallback_warning(fallback_reason))
+    if len(intel_lines) != len(render_nodes):
+        warnings.append(_render_node_mismatch_warning("lspci", len(intel_lines), len(render_nodes)))
+    gpus = [
         GPUInfo(
             device_path=str(path),
             name=intel_lines[index].split(": ", 1)[-1] if index < len(intel_lines) else "Intel Arc GPU",
@@ -103,6 +154,13 @@ def detect_gpus() -> list[GPUInfo]:
         )
         for index, path in enumerate(render_nodes)
     ]
+    return gpus, warnings
+
+
+def detect_gpus() -> list[GPUInfo]:
+    """Detect Intel Arc GPUs. Returns empty list if none found."""
+    gpus, _ = detect_gpus_with_diagnostics()
+    return gpus
 
 
 def check_gpu_access() -> list[str]:
@@ -113,7 +171,7 @@ def check_gpu_access() -> list[str]:
         return ["GPU access checks are only available on Linux hosts."]
     if not dri.exists():
         return ["/dev/dri is missing; GPU devices are not exposed."]
-    render_nodes = sorted(dri.glob("renderD*"))
+    render_nodes = _get_render_nodes()
     if not render_nodes:
         warnings.append("No /dev/dri/renderD* devices found.")
     if hasattr(os, "getgroups"):

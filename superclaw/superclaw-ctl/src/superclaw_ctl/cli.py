@@ -399,7 +399,7 @@ def init(
 ) -> None:
     """Initialize superclaw-ctl: check environment, generate keys, download models, save config."""
     from superclaw_ctl.checks import CheckResult, check_compose, check_disk_space, check_docker, check_gpu_minimum_requirements
-    from superclaw_ctl.gpu import check_gpu_access, detect_gpus
+    from superclaw_ctl.gpu import check_gpu_access, detect_gpus_with_diagnostics
     from superclaw_ctl.registry import load_registry
     from superclaw_ctl.secrets import generate_key
 
@@ -536,8 +536,8 @@ def init(
 
     # GPU detection + minimum requirement check (hard fail before any network I/O)
     console.print("\n[bold]Detecting GPUs...[/bold]")
-    gpus = detect_gpus()
-    warnings = check_gpu_access()
+    gpus, detection_warnings = detect_gpus_with_diagnostics()
+    warnings = [*detection_warnings, *check_gpu_access()]
     if gpus:
         print_gpu_info([{"name": g.name, "driver": g.driver_version, "status": f"{g.tiles} tiles"} for g in gpus])
     else:
