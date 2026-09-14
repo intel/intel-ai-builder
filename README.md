@@ -7,8 +7,8 @@
 <p align="justify"><strong>Intel® AI Builder</strong> is Intel’s Gen-AI reference design platform that enables the rapid creation of custom AI assistants and agents tailored to specific industry needs and proprietary data. </p>
 <p>There are 2 main offerings within the Intel AI Builder platform: </p>
 
-1. [Intel AI® SuperClaw](./superclaw/README.md)
-2. [Intel AI® SuperBuilder](./superbuilder/README.md)
+1. [Intel AI SuperClaw](./superclaw/README.md)
+2. [Intel AI SuperBuilder](./superbuilder/README.md)
 
 ### 🦀 Introducing SuperClaw — Local-First Hybrid Agentic AI
 
