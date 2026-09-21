@@ -55,10 +55,15 @@ The full specialized-agent lineup is available only on the enterprise edge serve
 | Hardware | Local model | Available agents |
 |----------|-------------|------------------|
 | Edge server (4× B70) | Qwen3-Coder-Next-80B | Default, Hybrid Coding, Deep Research, Email & Calendar |
+| Workstation — 1× B70, RAM ≥ 32 GB, ≥ 4800 MT/s | Qwen3.8-27B | Default, Hybrid Coding, Deep Research, Email & Calendar |
 | PTL — RAM ≥ 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.6-35B | Default, Hybrid Coding, Deep Research, Email & Calendar |
 | PTL — RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.5-4B | Enhanced Default Agent with full tools, permissions, and skills |
 
 > **Note:** PTL refers to Intel Panther Lake (Core Ultra Series 3).
+
+> ⚠️ **Important:** The GPU check matches the adapter name reported by Windows, which must contain `B70`, `B370`, or `B390`. A generic name such as "Intel(R) Graphics" does not match, even on supported silicon.
+>
+> If the adapter name or memory requirements do not match, SuperClaw installs no local chat model — only the small Qwen3.5-0.8B model used for File Protection. To run agents, configure a cloud model under **Advanced > Model Routing** or connect to an edge server.
 
 ---
 
@@ -79,13 +84,22 @@ To enable Auto Route, configure both a local model and at least one cloud model 
 
 ## Releases
 
-### v1.2 (Current)
+### v1.3 (Current)
+
+A single [SuperClaw v1.3 Windows app](https://aibuilder.intel.com/installers/SuperClaw-Setup-1.3.0.921.exe) provides four deployment options. The app detects your hardware at setup and configures the right solution automatically:
+
+- **Edge-connected:** Connect to an enterprise edge server for model serving [User Guide](./superclaw-ctl/USER-GUIDE.md).
+- **Standalone on a single-B70 workstation (new):** Run the model-serving workload and desktop app on a workstation with one B70 card, RAM ≥ 32 GB, and ≥ 4800 MT/s, using the Qwen3.8-27B local model with full agent capabilities.
+- **Standalone on PTL 64GB:** Run the model-serving workload and desktop app on a single PTL system with RAM ≥ 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.6-35B-A3B local model with full agent capabilities.
+- **Standalone on PTL 32GB:** Run standalone on a PTL system with RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.5-4B local model with Default Agent.
+
+### v1.2 (Past Release)
 
 A single [SuperClaw v1.2 Windows app](https://aibuilder.intel.com/installers/SuperClaw-Setup-1.2.0.813.exe) provides three deployment options. The app detects your hardware at setup and configures the right solution automatically:
 
 - **Edge-connected:** Connect to an enterprise edge server for model serving [User Guide](./superclaw-ctl/USER-GUIDE.md).
 - **Standalone on PTL 64GB:** Run the model-serving workload and desktop app on a single PTL system with RAM ≥ 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.6-35B-A3B local model with full agent capabilities.
-- **Standalone on PTL 32GB (new):** Run standalone on a PTL system with RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.5-4B local model with Default Agent.
+- **Standalone on PTL 32GB:** Run standalone on a PTL system with RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.5-4B local model with Default Agent.
 
 ### v1.1 (Past Release)
 
@@ -134,7 +148,7 @@ The **Advanced** area is where enterprises and users tailor SuperClaw to their h
 
 #### Model Routing
 
-Configure local and cloud models, connect cloud providers using API keys or OAuth, and choose which models Auto Route can use. On PTL 32GB or PTL 64GB systems, you can configure a local model served with llama.cpp; alternatively, connect to an edge server for model serving. SuperClaw adds broader model support with each release and lets users tune the Auto Route parameter to balance response quality against cost and privacy.
+Configure local and cloud models, connect cloud providers using API keys or OAuth, and choose which models Auto Route can use. On PTL 32GB, PTL 64GB, or single-B70 workstation systems, you can configure a local model served with llama.cpp; alternatively, connect to an edge server for model serving. SuperClaw adds broader model support with each release and lets users tune the Auto Route parameter to balance response quality against cost and privacy.
 
 #### Configuration
 
