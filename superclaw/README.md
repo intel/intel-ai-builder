@@ -52,12 +52,25 @@ For example, with experimental File Protection enabled, a customer-records sprea
 
 The full specialized-agent lineup is available only on the enterprise edge server and higher-memory AI PCs. More constrained systems run an enhanced Default Agent with full tools, permissions, and skills instead of the complete set of specialized agents.
 
-| Hardware | Local model | Available agents |
-|----------|-------------|------------------|
-| Edge server (4× B70) | Qwen3-Coder-Next-80B | Default, Hybrid Coding, Deep Research, Email & Calendar |
-| Workstation — 1× B70, RAM ≥ 32 GB, ≥ 4800 MT/s | Qwen3.8-27B | Default, Hybrid Coding, Deep Research, Email & Calendar |
-| PTL — RAM ≥ 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.6-35B | Default, Hybrid Coding, Deep Research, Email & Calendar |
-| PTL — RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.5-4B | Enhanced Default Agent with full tools, permissions, and skills |
+| Tier | Hardware | Local model | Available agents |
+|------|----------|-------------|------------------|
+| **Pro** | Edge server (4× B70) | Qwen3-Coder-Next-80B | Default, Hybrid Coding, Deep Research, Email & Calendar |
+| **Pro** | Workstation — 1× B70, RAM ≥ 32 GB, ≥ 4800 MT/s | Qwen3.8-27B | Default, Hybrid Coding, Deep Research, Email & Calendar |
+| **Pro** | PTL — RAM ≥ 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.6-35B-A3B | Default, Hybrid Coding, Deep Research, Email & Calendar |
+| **Standard** | PTL — RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.5-4B | Enhanced Default Agent with full tools, permissions, and skills |
+| **Lite** (not officially supported) | Systems that do not meet the requirements above | None for chat; Qwen3.5-0.8B for File Protection only | Requires a cloud model or an edge server connection |
+
+> **Note:** The Lite tier is not officially supported in the current release. It is the fallback state on unqualified hardware, and agent quality and performance are not validated.
+
+#### Local model details
+
+| Model | Details |
+|-------|---------|
+| **Qwen3-Coder-Next** | 80B MoE, 3B active |
+| **Qwen3.8-27B** | Dense, Q4_K_M GGUF |
+| **Qwen3.6-35B-A3B** | MoE, 3B active, UD-Q4_K_M GGUF |
+| **Qwen3.5-4B** | Dense with MTP head, Q4_K_M GGUF |
+| **Qwen3.5-0.8B** | Dense, Q4_K_M GGUF |
 
 > **Note:** PTL refers to Intel Panther Lake (Core Ultra Series 3).
 
@@ -88,10 +101,10 @@ To enable Auto Route, configure both a local model and at least one cloud model 
 
 A single [SuperClaw v1.3 Windows app](https://aibuilder.intel.com/installers/SuperClaw-Setup-1.3.0.921.exe) provides four deployment options. The app detects your hardware at setup and configures the right solution automatically:
 
-- **Edge-connected:** Connect to an enterprise edge server for model serving [User Guide](./superclaw-ctl/USER-GUIDE.md).
-- **Standalone on a single-B70 workstation (new):** Run the model-serving workload and desktop app on a workstation with one B70 card, RAM ≥ 32 GB, and ≥ 4800 MT/s, using the Qwen3.8-27B local model with full agent capabilities.
-- **Standalone on PTL 64GB:** Run the model-serving workload and desktop app on a single PTL system with RAM ≥ 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.6-35B-A3B local model with full agent capabilities.
-- **Standalone on PTL 32GB:** Run standalone on a PTL system with RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.5-4B local model with Default Agent.
+- **Edge-connected (Pro):** Connect to an enterprise edge server for model serving [User Guide](./superclaw-ctl/USER-GUIDE.md).
+- **Standalone on a single-B70 workstation (Pro, new):** Run the model-serving workload and desktop app on a workstation with one B70 card, RAM ≥ 32 GB, and ≥ 4800 MT/s, using the Qwen3.8-27B local model with full agent capabilities.
+- **Standalone on PTL 64GB (Pro):** Run the model-serving workload and desktop app on a single PTL system with RAM ≥ 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.6-35B-A3B local model with full agent capabilities.
+- **Standalone on PTL 32GB (Standard):** Run standalone on a PTL system with RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, and a B370 (10 Xe) or B390 (12 Xe) iGPU, using the Qwen3.5-4B local model with Default Agent.
 
 ### v1.2 (Past Release)
 
