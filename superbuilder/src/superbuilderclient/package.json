@@ -37,7 +37,7 @@
     "compare-versions": "^6.1.1",
     "dompurify": "^3.4.13",
     "i18next": "^26.3.3",
-    "i18next-http-backend": "^4.0.0",
+    "i18next-http-backend": "^4.0.2",
     "immer": "^11.1.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
