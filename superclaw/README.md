@@ -6,7 +6,7 @@ SuperClaw brings hybrid agentic AI to AI PCs, workstations, agent computers, and
 
 Agentic AI can take on complex work across tools, files, code, and business data. But when every task goes to the cloud, token costs climb and sensitive context can face added privacy and control risks.
 
-SuperClaw takes a different route: routine and sensitive work stays on-device or at the enterprise edge, while cloud models step in for advanced reasoning, planning, and external data retrieval.
+SuperClaw takes a different route: routine and sensitive work can stay on-device or at the enterprise edge, while cloud models step in for advanced reasoning, planning, and external data retrieval.
 
 For more details, read Intel's article, [Solving the Agentic AI Trilemma: Cost, Scale, and Data Security](https://newsroom.intel.com/opinion/solving-the-agentic-ai-trilemma-cost-scale-and-data-security).
 
@@ -26,7 +26,7 @@ For more details, read Intel's article, [Solving the Agentic AI Trilemma: Cost, 
 ### Why SuperClaw
 
 - **Spend cloud tokens where they matter.** Handle routine and sensitive tasks locally, and reserve cloud models for work that needs them.
-- **Keep sensitive data closer.** Private data stays on-device or within the enterprise edge by default, with context minimized before cloud escalation.
+- **Keep sensitive data closer.** With a local model or an edge server, private data can stay on-device or within the enterprise edge, and optional File Protection masks sensitive details before files are sent to the cloud.
 - **Match the model to the moment.** Each workflow step goes to the execution layer best suited to the task.
 - **Put modern Intel hardware to work.** SuperClaw is designed for Intel AI PCs and workstations, including systems with Intel® Core™ Ultra processors and Intel® Arc™ Pro B-series GPUs.
 - **Install it like any Windows app.** SuperClaw runs natively on Windows with built-in sandboxing: no WSL, no Docker, and no virtual machine.
