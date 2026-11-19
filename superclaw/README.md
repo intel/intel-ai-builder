@@ -150,7 +150,7 @@ v2.0 is the biggest change to SuperClaw since v1.0. The backend no longer runs i
 
 - **File Protection on every tier.** File Protection now also works on Lite systems. Its privacy models download the first time you turn it on, after you confirm, instead of being bundled with the installer. See [Privacy](#privacy).
 - **Telemetry choices.** The installer asks whether to share installation telemetry and crash logs. You can change either choice later under **Settings > Privacy**.
-- **Guided Slack setup.** SuperClaw creates the Slack app for you from a manifest; you paste two tokens.
+- **Guided Slack setup.** You no longer create and configure the Slack app by hand. SuperClaw creates it in your workspace with the right permissions; you approve the install and paste two tokens.
 - **Slack sender approval (action needed after upgrading).** The Slack bot now answers only people you approve. See [Slack](#slack).
 
 ---
