@@ -63,7 +63,7 @@ The full specialized-agent lineup is available on the enterprise edge server and
 | **Standard** | PTL — RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.5-4B (default) or Gemma 4 E4B (experimental) | Enhanced Default Agent with full tools, permissions, and skills |
 | **Lite** | Other Intel systems with RAM ≥ 16 GB and ≥ 5600 MT/s | None | Enhanced Default Agent with a cloud model; the full Pro lineup when connected to an edge server |
 
-> **Note:** Lite is officially supported starting with v2.0. Systems that do not meet the requirements for any of the tiers above are not supported.
+> **Note:** Lite is officially supported starting with v2.0. Systems that do not meet the Lite requirements are not supported.
 
 #### Local model details
 
@@ -96,7 +96,7 @@ Users set the balance. Higher settings favor response quality and route more tas
 - **Task-aware.** Lightweight, sensitive, and repetitive work stays local; demanding reasoning and planning can be routed to cloud models.
 - **User-controlled.** Users can tune Auto Route's quality tradeoff, force a local model for on-device work, or select a cloud model directly when maximum capability is required.
 
-To enable Auto Route, configure both a local model and at least one cloud model in Settings. If only local models are available, users can select a local model and work entirely offline.
+To enable Auto Route, configure both a local model and at least one cloud model in Settings. If you only have a local model, select it in the model picker, since Auto needs a cloud model, and set scheduled tasks to the local model too. After the first-run model download, you can then work offline; features that use the web, such as web search, still need a network connection.
 
 ---
 
