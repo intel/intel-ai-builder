@@ -63,7 +63,7 @@ The full specialized-agent lineup is available on the enterprise edge server and
 | **Standard** | PTL — RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.5-4B (default) or Gemma 4 E4B (experimental) | Enhanced Default Agent with full tools, permissions, and skills |
 | **Lite** | Other Intel systems with RAM ≥ 16 GB and ≥ 5600 MT/s | None | Enhanced Default Agent with a cloud model; the full Pro lineup when connected to an edge server |
 
-> **Note:** Lite is officially supported starting with v2.0. Systems that do not meet the Lite requirements are not supported.
+> **Note:** Lite is officially supported starting with v2.0. Systems that do not meet the requirements for any of the tiers above are not supported.
 
 #### Local model details
 
