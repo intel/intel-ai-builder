@@ -44,7 +44,7 @@ SuperClaw ships with a team of purpose-built agents. Each can work independently
 | **Default Agent** | A generalist for answering questions, reading and editing files, running tools, and coordinating specialists for larger tasks. |
 | **Hybrid Coding Agent** | A coding specialist for reading, writing, editing, debugging, running scripts, and handling git operations through explore, edit, and test loops. |
 | **Hybrid Deep Research Agent** | Runs multi-step research by delegating focused subtasks to web-search and file specialists, then synthesizes a cited answer. |
-| **Email & Calendar Agent** | Runs locally for security while listing, searching, summarizing, and prioritizing email; drafting replies; scheduling meetings; building daily plans; and tracking action items. |
+| **Email Agent** | Runs locally for security while listing, searching, summarizing, and prioritizing email; drafting replies; scheduling meetings; building daily plans; and tracking action items. |
 | **Local File Agent** | Extracts and answers questions from documents such as PDF, CSV, Markdown, DOCX, XLSX, and PPTX, using the local model when one is available. Includes a built-in OCR tool for extracting text from images. |
 | **Web Search Agent** | Returns focused, factual answers with source citations for current information from the web. |
 | **File Protection (Experimental)** | An optional, off-by-default feature that detects and masks sensitive information before cloud processing. |
@@ -57,9 +57,9 @@ The full specialized-agent lineup is available on the enterprise edge server and
 
 | Tier | Hardware | Local model | Available agents |
 |------|----------|-------------|------------------|
-| **Pro** | Edge server (4× B70) | Qwen3.8-Flash-Next | Default, Hybrid Coding, Hybrid Deep Research, Email & Calendar |
-| **Pro** | Workstation — 1× B70, RAM ≥ 32 GB, ≥ 4800 MT/s | Qwen3.8-27B | Default, Hybrid Coding, Hybrid Deep Research, Email & Calendar |
-| **Pro** | PTL — RAM ≥ 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.6-35B-A3B (default) or Gemma 4 26B-A4B (experimental) | Default, Hybrid Coding, Hybrid Deep Research, Email & Calendar |
+| **Pro** | Edge server (4× B70) | Qwen3.8-Flash-Next | Default, Hybrid Coding, Hybrid Deep Research, Email |
+| **Pro** | Workstation — 1× B70, RAM ≥ 32 GB, ≥ 4800 MT/s | Qwen3.8-27B | Default, Hybrid Coding, Hybrid Deep Research, Email |
+| **Pro** | PTL — RAM ≥ 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.6-35B-A3B (default) or Gemma 4 26B-A4B (experimental) | Default, Hybrid Coding, Hybrid Deep Research, Email |
 | **Standard** | PTL — RAM ≥ 32 GB and < 64 GB, ≥ 6400 MT/s, iGPU B370 (10 Xe) or B390 (12 Xe) | Qwen3.5-4B (default) or Gemma 4 E4B (experimental) | Enhanced Default Agent with full tools, permissions, and skills |
 | **Lite** | Other Intel systems with RAM ≥ 16 GB and ≥ 5600 MT/s | None | Enhanced Default Agent with a cloud model; the full Pro lineup when connected to an edge server |
 
@@ -267,7 +267,7 @@ Configure local and cloud models, connect cloud providers using API keys or OAut
 #### Connections
 
 - **Web Search** — Configuring a [Tavily](https://www.tavily.com/) API key is strongly recommended for higher-quality, more reliable search results. Tavily offers 1,000 free searches with sign-in. Without a key, web search falls back to DuckDuckGo, which may return lower-quality results.
-- **Gmail Credentials** — Upload Google OAuth credentials to authorize the Email & Calendar Agent. SuperClaw provides setup instructions when you ask it to access your email. If you need more guidance, follow this [Gmail API setup video](https://www.youtube.com/watch?v=RsY14ltDNFM).
+- **Gmail Credentials** — Upload Google OAuth credentials to authorize the Email Agent. SuperClaw provides setup instructions when you ask it to access your email. If you need more guidance, follow this [Gmail API setup video](https://www.youtube.com/watch?v=RsY14ltDNFM).
 - **Slack** — Deliver agent and scheduled-task results to your team in Slack. See [Slack](#slack).
 
 #### Slack
