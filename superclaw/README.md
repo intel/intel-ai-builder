@@ -65,7 +65,7 @@ The full specialized-agent lineup is available on edge-connected systems, single
 
 > **Note:** PTL refers to Intel Panther Lake (Core Ultra Series 3).
 
-> **Note:** Lite is officially supported starting with v2.0. Systems that do not meet the Lite requirements are not supported.
+> **Note:** Lite is officially supported starting with v2.0. Systems that do not meet the requirements for any of the tiers above are not supported.
 
 #### Local model details
 
@@ -208,7 +208,7 @@ Users interact with SuperClaw on the AI PC while the model workload runs on the 
 
 1. **Update the graphics driver on PTL systems.** Install [Intel® Arc™ Graphics - Windows](https://www.intel.com/content/www/us/en/download/785597/intel-arc-graphics-windows.html) version **32.0.101.8860 or later** for significantly better model-inference performance. The installer's Hardware Review page also checks the driver version and links to the update. If you update the driver after installing SuperClaw, run the SuperClaw installer again and choose **Repair** to restore its graphics memory setting.
 
-2. **Configure your network.** If your corporate network requires a proxy for downloads, such as fetching models from Hugging Face, configure it in Windows before installing SuperClaw. SuperClaw uses your Windows proxy settings, including a proxy auto-config (PAC) script. If the `HTTPS_PROXY` environment variable is set, it takes precedence.
+2. **Configure your network.** If your corporate network requires a proxy, set the `HTTPS_PROXY` environment variable for your Windows account before installing SuperClaw, and `NO_PROXY` for hosts to reach directly. Downloads, such as fetching models from Hugging Face, File Protection models, and in-app updates, use only this variable. Agents' web access also follows your Windows proxy settings, including a proxy auto-config (PAC) script; if `HTTPS_PROXY` is set, it takes precedence.
 
 3. **Download and run the installer** from [Releases](#releases). The installer shows a Hardware Review page, asks whether to share installation telemetry and crash logs, and installs the Microsoft Visual C++ Redistributable if it is missing or out of date. When it finishes, choose **Restart Now** (recommended): the installer changes a graphics memory setting that takes effect after a restart.
 
@@ -216,7 +216,7 @@ Users interact with SuperClaw on the AI PC while the model workload runs on the 
 
 5. **Confirm the first-run model download.** On PTL and B70 systems, SuperClaw asks you to confirm a download of its local model on first launch: about 23 GB for Qwen3.6-35B-A3B, 21 GB for Qwen3.8-27B, or 3.4 GB for Qwen3.5-4B. Click **Confirm**; if you cancel, SuperClaw closes. Keep the app open until the download finishes. Later launches skip it. On Lite systems there is nothing to download; add a cloud model under **Settings > Model Routing** or connect to an edge server.
 
-6. **Connect to an edge server (optional).** For edge server installation, configuration, and connection instructions, see the [`superclaw-ctl` Edge Server User Guide](./superclaw-ctl/USER-GUIDE.md). If the edge server is on your intranet, select **This server is on an intranet — bypass HTTP proxy** when you add it under **Settings > Model Routing**.
+6. **Connect to an edge server (optional).** For edge server installation, configuration, and connection instructions, see the [`superclaw-ctl` Edge Server User Guide](./superclaw-ctl/USER-GUIDE.md). If the edge server is on your intranet, keep **Bypass HTTP proxy (intranet server)** selected when you add it under **Settings > Model Routing**; it is selected by default.
 
 ---
 
@@ -249,8 +249,8 @@ The next time SuperClaw starts after importing your chat sessions, it removes it
 #### General
 
 - **Appearance** — Choose a System, Light, or Dark theme, and the interface language.
-- **Privacy & Telemetry** — Turn **Share app usage and health data** and **Share crash reports** on or off. These start with the choices you made in the installer.
 - **File Cleanup** — Automatically deletes temporary files from inactive sessions after the retention period you set (7 days by default), or click **Run cleanup now**. Your reports and saved files are never touched.
+- **Privacy & Telemetry** — Turn **Share app usage and health data** and **Share crash reports** on or off. These start with the choices you made in the installer.
 
 #### Model Routing
 
@@ -263,10 +263,10 @@ Configure local and cloud models, connect cloud providers using API keys or OAut
 
 #### Connections
 
-- **Search Settings** — Configuring a [Tavily](https://www.tavily.com/) API key is strongly recommended for higher-quality, more reliable search results. Tavily's free plan includes 1,000 searches a month. Without a key, web search falls back to DuckDuckGo, which may return lower-quality results.
-- **GitHub Account** — Click **Sign in with browser** to let agents work with your issues, pull requests, and repos.
-- **Gmail Credentials** (Pro) — Upload your Google OAuth `credentials.json` to authorize the Email Agent; the card lists the steps to create it. If you need more guidance, follow this [Gmail API setup video](https://www.youtube.com/watch?v=RsY14ltDNFM).
 - **Slack** — Let approved teammates chat with SuperClaw from Slack. See [Slack](#slack).
+- **GitHub Account** — Click **Sign in with browser** to let agents work with your issues, pull requests, and repos.
+- **Search Settings** — Configuring a [Tavily](https://www.tavily.com/) API key is strongly recommended for higher-quality, more reliable search results. Tavily's free plan includes 1,000 searches a month. Without a key, web search falls back to DuckDuckGo, which may return lower-quality results.
+- **Gmail Credentials** (Pro) — Upload your Google OAuth `credentials.json` to authorize the Email Agent; the card lists the steps to create it. If you need more guidance, follow this [Gmail API setup video](https://www.youtube.com/watch?v=RsY14ltDNFM).
 
 #### Slack
 
@@ -282,7 +282,7 @@ The app is named **SuperClaw** in Slack. Send it a direct message, or use it in 
 
 #### Dictation
 
-Choose **Local** recognition (on your computer, English only, offline after a one-time ~630 MB download, up to 2 minutes per recording) or **Cloud** recognition (follows your system language). Set up to four shortcut keys or mouse buttons (Right Alt by default) to start and stop recording, and choose the read-aloud voice. With Local recognition, you can also manage the Dictionary of names and terms, and optionally turn on **Clean up dictated text**, which sends dictated text to a cloud model to tidy it unless you choose the on-device model. Read-aloud downloads its English voices (about 337 MB) the first time you use it.
+Choose **Local** recognition (on your computer, English only, offline after a one-time ~630 MB download, up to 2 minutes per recording) or **Cloud** recognition (follows your system language). Set up to four shortcut keys or mouse buttons (Right Alt by default) to start and stop recording, and choose the read-aloud voice. With Local recognition, you can also manage the Dictionary of names and terms, and optionally turn on **Clean up dictated text**, which sends dictated text to a cloud model to tidy it unless you choose the on-device model. Read-aloud downloads its English voices (about 353 MB) the first time you use it.
 
 #### Agents
 
@@ -307,7 +307,7 @@ SuperClaw supports the **Model Context Protocol (MCP)**, an open standard for co
 - **Remote URL** — an HTTP or SSE endpoint, such as `http://localhost:<port>/mcp` (streamable HTTP) or `http://localhost:<port>/sse` (SSE).
 - **Local command** — a stdio server started by a command, such as `npx -y <package>` or `uvx <package>`. SuperClaw includes Node.js and uv, so you do not need to install them.
 
-Local commands run inside SuperClaw's sandbox by default. For servers that need your desktop, such as computer-use servers, turn on **Run on this computer**: the server then runs outside the sandbox as your user account, and by default SuperClaw asks you to approve each action. A bar at the top of the window shows what is running and offers **Stop all**.
+Local commands run inside SuperClaw's sandbox by default. For servers that need your desktop, such as computer-use servers, turn on **Run on this computer (outside the sandbox)**: the server then runs outside the sandbox as your user account, and by default SuperClaw asks you to approve each action. A bar at the top of the window shows what is running and offers **Stop all**.
 
 For browser automation with Playwright MCP, turn on **Use SuperClaw browser**. The agent then drives a dedicated, visible InPrivate Microsoft Edge window rather than your own signed-in browser.
 
@@ -319,7 +319,7 @@ To add GitHub from the catalog, register an OAuth app in GitHub Developer Settin
 
 #### Schedulers
 
-Click **Create scheduler** to set up a recurring task: give it a name and prompt, choose the agent and model, and set when it runs. For best results, provide clear and detailed instructions for what the agent should do.
+Click **New Scheduler** to set up a recurring task: give it a name and prompt, choose the agent and model, and set when it runs. For best results, provide clear and detailed instructions for what the agent should do.
 
 ---
 
@@ -331,7 +331,7 @@ SuperClaw v2.0 runs its backend in a native Windows sandbox, under restricted Wi
 
 ### What does the SuperClaw sandbox protect?
 
-In v2.0 the sandbox limits which files and folders agents can read and write, and keeps backend components apart from each other and from your user account. It does not yet restrict network access. MCP servers you set to **Run on this computer** run outside the sandbox as your user account; by default, SuperClaw asks you to approve each of their actions.
+In v2.0 the sandbox limits which files and folders agents can read and write, and keeps backend components apart from each other and from your user account. It does not yet restrict network access. MCP servers you set to **Run on this computer (outside the sandbox)** run outside the sandbox as your user account; by default, SuperClaw asks you to approve each of their actions.
 
 ### Do I still need WSL or Intel VT-x virtualization?
 
@@ -349,7 +349,7 @@ To run a local model on a PTL system, install [Intel® Arc™ Graphics - Windows
 
 ### How do I configure SuperClaw for corporate proxy or VPN environments?
 
-SuperClaw uses your Windows proxy settings, including a proxy auto-config (PAC) script, so it normally works on a corporate network or VPN without extra setup. To override them, set the `HTTPS_PROXY` environment variable. If an edge server is on your intranet, select **This server is on an intranet — bypass HTTP proxy** when you add it under **Settings > Model Routing**. The v1.x `.wslconfig` and network-switching workarounds are no longer needed.
+SuperClaw's downloads, such as models and in-app updates, use the `HTTPS_PROXY` environment variable, so on a network that requires a proxy, set it (and `NO_PROXY` for hosts to reach directly) for your Windows account. Agents' web access follows your Windows proxy settings, including a proxy auto-config (PAC) script, unless `HTTPS_PROXY` is set. If an edge server is on your intranet, keep **Bypass HTTP proxy (intranet server)** selected when you add it under **Settings > Model Routing**; it is selected by default. The v1.x `.wslconfig` and network-switching workarounds are no longer needed.
 
 ### How do I update SuperClaw?
 
